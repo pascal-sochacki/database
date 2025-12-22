@@ -10,6 +10,62 @@ const BTREE_MAX_KEY_SIZE = 1000
 const BTREE_MAX_VAL_SIZE = 3000
 const HEADER = 4
 
+type Storage interface {
+	Get(uint64) []byte
+	New([]byte) uint64
+	Delete(uint64)
+}
+
+type BTree struct {
+	root    uint64
+	storage Storage
+}
+
+func NewBTree(storage Storage) BTree {
+	root := BNode(make([]byte, BTREE_PAGE_SIZE))
+	root.setHeader(BNODE_LEAF, 0)
+	idx := storage.New(root)
+
+	return BTree{
+		root:    idx,
+		storage: storage,
+	}
+}
+
+func (tree *BTree) Get(key []byte) ([]byte, bool) {
+	if tree.root == 0 {
+		return nil, false
+	}
+	root := BNode(tree.storage.Get(tree.root))
+
+	idx, ok := root.Lookup(key)
+	if ok {
+		return root.getVal(idx), true
+	}
+	return []byte{}, false
+}
+
+func (t *BTree) Insert(key []byte, val []byte) error {
+	current := BNode(t.storage.Get(t.root))
+
+	switch current.btype() {
+	case BNODE_LEAF:
+
+		idx, ok := current.Lookup(key)
+
+		var new BNode
+		if ok {
+			new = current.UpdateValue(idx, key, val)
+		} else {
+			new = current.InsertValue(idx, key, val)
+		}
+		t.storage.Delete(t.root)
+		t.root = t.storage.New(new)
+	case BNODE_NODE:
+	}
+	return nil
+}
+
 func init() {
 	node1max := 4 + 1*8 + 1*2 + 4 + BTREE_MAX_KEY_SIZE + BTREE_MAX_VAL_SIZE
 	assert(node1max <= BTREE_PAGE_SIZE) // maximum KV
@@ -44,7 +100,7 @@ func (node BNode) getPtr(idx uint16) uint64 {
 }
 
 func (node BNode) setPtr(idx uint16, val uint64) {
-	assert(idx <= node.nkeys())
+	assert(idx < node.nkeys())
 	pos := 4 + 8*idx
 	binary.LittleEndian.PutUint64(node[pos:], val)
 }
@@ -151,6 +207,17 @@ func (node BNode) LookupLE(key []byte) uint16 {
 		}
 	}
 	return i - 1
+}
+
+func (node BNode) Lookup(key []byte) (uint16, bool) {
+	nkeys := node.nkeys()
+	var i uint16
+	for i = range nkeys {
+		if bytes.Equal(node.getKey(i), key) {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func (node BNode) Split() (BNode, BNode) {
