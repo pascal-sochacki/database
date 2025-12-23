@@ -294,3 +294,46 @@ func TestInsertTooForceThreeWaySplit(t *testing.T) {
 		t.Fatalf("should have 4 page, has: %d", len(storage.storage))
 	}
 }
+
+func TestInsertIfRootIsInternalNode(t *testing.T) {
+	storage := MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{},
+	}
+	tree := NewBTree(&storage)
+
+	aKey := []byte(strings.Repeat("ak", 500))
+	aVal := []byte(strings.Repeat("av", 1500))
+	err := tree.Insert(aKey, aVal)
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
+
+	bKey := []byte(strings.Repeat("bk", 500))
+	bVal := []byte(strings.Repeat("bv", 1500))
+	err = tree.Insert(bKey, bVal)
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
+
+	cKey := []byte(strings.Repeat("ck", 500))
+	cVal := []byte(strings.Repeat("cv", 1500))
+	err = tree.Insert(cKey, cVal)
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
+
+	result, ok, err := tree.Get(cKey)
+	if err != nil {
+		storage.DumpPages()
+		t.Fatalf("should not raised err: %v", err)
+	}
+	if !ok {
+		storage.DumpPages()
+		t.Fatalf("should get ok as result, but got ok=%v", ok)
+	}
+	if !bytes.Equal(result, cVal) {
+		t.Fatal("should get ok as result")
+	}
+
+}
