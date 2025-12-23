@@ -337,3 +337,66 @@ func TestInsertIfRootIsInternalNode(t *testing.T) {
 	}
 
 }
+
+func DebugTree(tree BTree, t *testing.T) {
+	debugNode(tree, t, tree.Root, 0)
+}
+
+func debugNode(tree BTree, t *testing.T, nodePtr uint64, depth int) {
+	indent := ""
+	for range depth {
+		indent += "  "
+	}
+
+	node := BNode(tree.storage.Get(nodePtr))
+	t.Logf("%sNode %d (type: %d, nkeys: %d)\n", indent, nodePtr, node.nodeType(), node.nkeys())
+
+	if node.nodeType() == BNODE_NODE {
+		for i := uint16(0); i < node.nkeys(); i++ {
+			ptr, err := node.getPtr(i)
+			if err != nil {
+				t.Logf("%sError getting ptr %d: %v\n", indent, i, err)
+				continue
+			}
+			debugNode(tree, t, ptr, depth+1)
+		}
+	}
+}
+
+func TestForceInternalNodeSplit(t *testing.T) {
+	storage := &MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{},
+	}
+	tree := NewBTree(storage)
+
+	// Insert 5 items with 1000-byte keys to force internal node split
+	// With 1000-byte keys, an internal node can hold ~4 children before splitting
+	for i := range 5 {
+		key := []byte(strings.Repeat(string(rune('a'+i)), 1000))
+		val := []byte(strings.Repeat(string(rune('a'+i)), 3000))
+		err := tree.Insert(key, val)
+		if err != nil {
+			t.Fatalf("insert %d failed: %v", i, err)
+		}
+		t.Logf("\n=== TREE STRUCTURE AFTER %d INSERTS ===", i+1)
+		DebugTree(tree, t)
+	}
+
+	// Verify all keys are retrievable
+	for i := range 5 {
+		key := []byte(strings.Repeat(string(rune('a'+i)), 1000))
+		expectedVal := []byte(strings.Repeat(string(rune('a'+i)), 3000))
+		result, ok, err := tree.Get(key)
+		if err != nil || !ok {
+			t.Fatalf("failed to retrieve key %d: %v", i, err)
+		}
+		if !bytes.Equal(result, expectedVal) {
+			t.Fatalf("value mismatch for key %d: got %s, want %s", i, result, expectedVal)
+		}
+	}
+	pageCount := len(storage.storage)
+	if pageCount <= 4 {
+		t.Fatalf("expected internal node split with >4 pages, got %d", pageCount)
+	}
+}
