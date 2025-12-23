@@ -13,14 +13,14 @@ func assertKV(t *testing.T, node BNode, idx uint16, expectedKey, expectedVal []b
 	t.Helper()
 	currentKey, err := node.getKey(idx)
 	if err != nil {
-		t.Fatal("should not err")
+		t.Fatalf("should not err: %v", err)
 	}
 	if !bytes.Equal(currentKey, expectedKey) {
 		t.Fatalf("key mismatch at index %d: got %s, want %s", idx, currentKey, expectedKey)
 	}
 	currentVal, err := node.getVal(idx)
 	if err != nil {
-		t.Fatal("should not err")
+		t.Fatalf("should not err: %v", err)
 	}
 	if !bytes.Equal(currentVal, expectedVal) {
 		t.Fatalf("value mismatch at index %d: got %s, want %s", idx, currentVal, expectedVal)
@@ -39,7 +39,10 @@ func TestWriteAndRead(t *testing.T) {
 
 	assertKV(t, node, 0, []byte("k1"), []byte("hi"))
 	assertKV(t, node, 1, []byte("k3"), []byte("hello"))
-	bytes, _ := node.nbytes()
+	bytes, err := node.nbytes()
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 	if bytes != 43 {
 		t.Fatalf("wrong size is: %d", bytes)
 	}
@@ -78,7 +81,10 @@ func TestLookupLE(t *testing.T) {
 	node.AppendKV(0, 0, []byte("k1"), []byte("hi"))
 	node.AppendKV(1, 0, []byte("k3"), []byte("world"))
 
-	idx, _ := node.LookupLE([]byte("k2"))
+	idx, err := node.LookupLE([]byte("k2"))
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 
 	if idx != 0 {
 		t.Fatalf("wrong idx is: %d", idx)
@@ -133,17 +139,26 @@ func TestInsertTree(t *testing.T) {
 	tree.Insert([]byte("hello"), []byte("world"))
 	tree.Insert([]byte("hallo"), []byte("welt"))
 
-	result, ok, _ := tree.Get([]byte("hello"))
+	result, ok, err := tree.Get([]byte("hello"))
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 	if !ok || !bytes.Equal(result, []byte("world")) {
 		t.Fatalf("value mismatch got %s, want %s", result, "world")
 	}
 
-	result, ok, _ = tree.Get([]byte("hallo"))
+	result, ok, err = tree.Get([]byte("hallo"))
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 	if !ok || !bytes.Equal(result, []byte("welt")) {
 		t.Fatalf("value mismatch got %s, want %s", result, "welft")
 	}
 
-	result, ok, _ = tree.Get([]byte("servus"))
+	result, ok, err = tree.Get([]byte("servus"))
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 	if ok || bytes.Equal(result, []byte("welt")) {
 		t.Fatalf("value mismatch got %s, want %s", result, "welft")
 	}
@@ -156,14 +171,20 @@ func TestUpdateTree(t *testing.T) {
 	)
 	tree.Insert([]byte("hello"), []byte("world"))
 
-	result, ok, _ := tree.Get([]byte("hello"))
+	result, ok, err := tree.Get([]byte("hello"))
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 	if !ok || !bytes.Equal(result, []byte("world")) {
 		t.Fatalf("value mismatch got %s, want %s", result, "world")
 	}
 
 	tree.Insert([]byte("hello"), []byte("welt"))
 
-	result, ok, _ = tree.Get([]byte("hello"))
+	result, ok, err = tree.Get([]byte("hello"))
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 	if !ok || !bytes.Equal(result, []byte("welt")) {
 		t.Fatalf("value mismatch got %s, want %s", result, "welt")
 	}
@@ -202,7 +223,7 @@ func TestInsertTooForceSplit(t *testing.T) {
 		[]byte(strings.Repeat("a", 3000)),
 	)
 	if err != nil {
-		t.Fatal("should not raised err")
+		t.Fatalf("should not raised err: %v", err)
 	}
 
 	err = tree.Insert(
@@ -210,10 +231,13 @@ func TestInsertTooForceSplit(t *testing.T) {
 		[]byte(strings.Repeat("b", 3000)),
 	)
 	if err != nil {
-		t.Fatal("should not raised err")
+		t.Fatalf("should not raised err: %v", err)
 	}
 
-	result, ok, _ := tree.Get([]byte(strings.Repeat("a", 1000)))
+	result, ok, err := tree.Get([]byte(strings.Repeat("a", 1000)))
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 	if !ok {
 		t.Fatal("should get ok as result")
 	}
