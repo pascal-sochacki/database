@@ -104,26 +104,37 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 		if bytes < BTREE_PAGE_SIZE {
 			new = new[:BTREE_PAGE_SIZE]
 		} else {
+			nodes := []BNode{}
 			left, right := new.Split()
-			if len(left) > BTREE_PAGE_SIZE || len(right) > BTREE_PAGE_SIZE {
-				return fmt.Errorf("size too large after split")
+
+			if len(left) > BTREE_PAGE_SIZE {
+				l1, l2 := left.Split()
+				nodes = append(nodes, l1[:BTREE_PAGE_SIZE])
+				nodes = append(nodes, l2[:BTREE_PAGE_SIZE])
+			} else {
+				nodes = append(nodes, left[:BTREE_PAGE_SIZE])
 			}
+
+			if len(right) > BTREE_PAGE_SIZE {
+				r1, r2 := right.Split()
+				nodes = append(nodes, r1[:BTREE_PAGE_SIZE])
+				nodes = append(nodes, r2[:BTREE_PAGE_SIZE])
+			} else {
+				nodes = append(nodes, right[:BTREE_PAGE_SIZE])
+			}
+
 			new = BNode(make([]byte, BTREE_PAGE_SIZE))
-			new.setHeader(BNODE_NODE, 2)
+			new.setHeader(BNODE_NODE, uint16(len(nodes)))
 
-			leftPtr := t.storage.New(left)
-			leftKey, err := left.getKey(0)
-			if err != nil {
-				return err
-			}
-			new.AppendKV(0, leftPtr, leftKey, nil)
+			for i, v := range nodes {
+				ptr := t.storage.New(v)
+				key, err := v.getKey(0)
+				if err != nil {
+					return err
+				}
+				new.AppendKV(uint16(i), ptr, key, nil)
 
-			rightPtr := t.storage.New(right)
-			rightKey, err := right.getKey(0)
-			if err != nil {
-				return err
 			}
-			new.AppendKV(1, rightPtr, rightKey, nil)
 
 			if len(new) > BTREE_PAGE_SIZE {
 				return fmt.Errorf("size too large after split in root")
@@ -352,7 +363,7 @@ func (node BNode) Split() (BNode, BNode) {
 	nleft := node.nkeys() / 2
 	nright := node.nkeys() - nleft
 
-	left, right := make(BNode, BTREE_PAGE_SIZE), make(BNode, BTREE_PAGE_SIZE)
+	left, right := make(BNode, BTREE_PAGE_SIZE*2), make(BNode, BTREE_PAGE_SIZE*2)
 	left.setHeader(BNODE_LEAF, nleft)
 	right.setHeader(BNODE_LEAF, nright)
 

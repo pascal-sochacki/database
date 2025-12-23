@@ -225,23 +225,21 @@ func TestInsertTooForceSplit(t *testing.T) {
 	}
 	tree := NewBTree(&storage)
 
-	err := tree.Insert(
-		[]byte(strings.Repeat("ak", 500)),
-		[]byte(strings.Repeat("av", 1500)),
-	)
+	aKey := []byte(strings.Repeat("ak", 500))
+	aVal := []byte(strings.Repeat("av", 1500))
+	err := tree.Insert(aKey, aVal)
 	if err != nil {
 		t.Fatalf("should not raised err: %v", err)
 	}
 
-	err = tree.Insert(
-		[]byte(strings.Repeat("bk", 500)),
-		[]byte(strings.Repeat("bv", 1500)),
-	)
+	bKey := []byte(strings.Repeat("bk", 500))
+	bVal := []byte(strings.Repeat("bv", 1500))
+	err = tree.Insert(bKey, bVal)
 	if err != nil {
 		t.Fatalf("should not raised err: %v", err)
 	}
 
-	result, ok, err := tree.Get([]byte(strings.Repeat("ak", 500)))
+	result, ok, err := tree.Get(aKey)
 	if err != nil {
 		storage.DumpPages()
 		t.Fatalf("should not raised err: %v", err)
@@ -250,8 +248,43 @@ func TestInsertTooForceSplit(t *testing.T) {
 		storage.DumpPages()
 		t.Fatalf("should get ok as result, but got ok=%v", ok)
 	}
-	if !bytes.Equal(result, []byte(strings.Repeat("av", 1500))) {
+	if !bytes.Equal(result, aVal) {
 		t.Fatal("should get ok as result")
 	}
+}
 
+func TestInsertTooForceThreeWaySplit(t *testing.T) {
+	aKey := []byte(strings.Repeat("ak", 200))
+	aVal := []byte(strings.Repeat("av", 700))
+
+	bKey := []byte(strings.Repeat("bk", 500))
+	bVal := []byte(strings.Repeat("bv", 1500))
+
+	cKey := []byte(strings.Repeat("ck", 200))
+	cVal := []byte(strings.Repeat("cv", 700))
+
+	storage := MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{},
+	}
+	tree := NewBTree(&storage)
+
+	err := tree.Insert(aKey, aVal)
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
+
+	err = tree.Insert(cKey, cVal)
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
+
+	if len(storage.storage) != 1 {
+		t.Fatalf("should only have 1 page")
+	}
+
+	err = tree.Insert(bKey, bVal)
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
 }
