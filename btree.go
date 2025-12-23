@@ -107,7 +107,16 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 			nodes := []BNode{}
 			left, right := new.Split()
 
-			if len(left) > BTREE_PAGE_SIZE {
+			leftSize, err := left.nbytes()
+			if err != nil {
+				return err
+			}
+			rightSize, err := right.nbytes()
+			if err != nil {
+				return err
+			}
+
+			if leftSize > BTREE_PAGE_SIZE {
 				l1, l2 := left.Split()
 				nodes = append(nodes, l1[:BTREE_PAGE_SIZE])
 				nodes = append(nodes, l2[:BTREE_PAGE_SIZE])
@@ -115,7 +124,7 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 				nodes = append(nodes, left[:BTREE_PAGE_SIZE])
 			}
 
-			if len(right) > BTREE_PAGE_SIZE {
+			if rightSize > BTREE_PAGE_SIZE {
 				r1, r2 := right.Split()
 				nodes = append(nodes, r1[:BTREE_PAGE_SIZE])
 				nodes = append(nodes, r2[:BTREE_PAGE_SIZE])
@@ -316,7 +325,7 @@ func (new BNode) AppendRange(old BNode, dstNew uint16, srcOld uint16, n uint16) 
 func (node BNode) LookupLE(key []byte) (uint16, error) {
 	nkeys := node.nkeys()
 	var i uint16
-	for i = 0; i < nkeys; i++ {
+	for i = range nkeys {
 		currentKey, err := node.getKey(i)
 		if err != nil {
 			return 0, err

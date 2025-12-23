@@ -116,6 +116,7 @@ func (m *MockStorage) DumpPages() {
 
 // Delete implements Storage.
 func (m *MockStorage) Delete(i uint64) {
+	m.testing.Logf("deleting page: %d", i)
 	delete(m.storage, i)
 }
 
@@ -131,6 +132,8 @@ func (m *MockStorage) New(d []byte) uint64 {
 		m.testing.Errorf("New() called with %d bytes, exceeds BTREE_PAGE_SIZE (%d)", len(d), BTREE_PAGE_SIZE)
 	}
 	idx := rand.Uint64()
+	node := BNode(d)
+	m.testing.Logf("creating page: %d type: %d", idx, node.btype())
 	m.storage[idx] = d
 	return idx
 }
@@ -286,5 +289,8 @@ func TestInsertTooForceThreeWaySplit(t *testing.T) {
 	err = tree.Insert(bKey, bVal)
 	if err != nil {
 		t.Fatalf("should not raised err: %v", err)
+	}
+	if len(storage.storage) != 4 {
+		t.Fatalf("should have 4 page, has: %d", len(storage.storage))
 	}
 }
