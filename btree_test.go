@@ -39,7 +39,7 @@ func TestWriteAndRead(t *testing.T) {
 
 	assertKV(t, node, 0, []byte("k1"), []byte("hi"))
 	assertKV(t, node, 1, []byte("k3"), []byte("hello"))
-	bytes, err := node.nbytes()
+	bytes, err := node.usedBytes()
 	if err != nil {
 		t.Fatalf("should not raised err: %v", err)
 	}
@@ -133,7 +133,7 @@ func (m *MockStorage) New(d []byte) uint64 {
 	}
 	idx := rand.Uint64()
 	node := BNode(d)
-	m.testing.Logf("creating page: %d type: %d", idx, node.btype())
+	m.testing.Logf("creating page: %d type: %d", idx, node.nodeType())
 	m.storage[idx] = d
 	return idx
 }

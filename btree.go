@@ -49,7 +49,7 @@ func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
 
 	current := root
 	for {
-		if current.btype() == BNODE_LEAF {
+		if current.nodeType() == BNODE_LEAF {
 			idx, ok, err := current.Lookup(key)
 			if err != nil {
 				return nil, false, err
@@ -86,7 +86,7 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 	current := BNode(t.storage.Get(t.root))
 
 	for {
-		switch current.btype() {
+		switch current.nodeType() {
 		case BNODE_NODE:
 			idx, err := current.LookupLE(key)
 			if err != nil {
@@ -112,18 +112,18 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 				new = current.InsertValue(idx, key, val)
 			}
 
-			bytes, _ := new.nbytes()
+			bytes, _ := new.usedBytes()
 			if bytes < BTREE_PAGE_SIZE {
 				new = new[:BTREE_PAGE_SIZE]
 			} else {
 				nodes := []BNode{}
 				left, right := new.Split()
 
-				leftSize, err := left.nbytes()
+				leftSize, err := left.usedBytes()
 				if err != nil {
 					return err
 				}
-				rightSize, err := right.nbytes()
+				rightSize, err := right.usedBytes()
 				if err != nil {
 					return err
 				}
@@ -185,7 +185,7 @@ var (
 	BNODE_LEAF Type = 2 // leaf nodes with values
 )
 
-func (node BNode) btype() Type {
+func (node BNode) nodeType() Type {
 	return Type(binary.LittleEndian.Uint16(node[0:2]))
 }
 
@@ -223,7 +223,7 @@ func (node BNode) getOffset(idx uint16) uint16 {
 	return binary.LittleEndian.Uint16(node[pos:])
 }
 
-func (node BNode) kvPos(idx uint16) (uint16, error) {
+func (node BNode) keyValuePosition(idx uint16) (uint16, error) {
 	if idx > node.nkeys() {
 		return 0, fmt.Errorf("out of bound")
 	}
@@ -231,7 +231,7 @@ func (node BNode) kvPos(idx uint16) (uint16, error) {
 }
 
 func (node BNode) getKey(idx uint16) ([]byte, error) {
-	pos, err := node.kvPos(idx)
+	pos, err := node.keyValuePosition(idx)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -240,7 +240,7 @@ func (node BNode) getKey(idx uint16) ([]byte, error) {
 }
 
 func (node BNode) getVal(idx uint16) ([]byte, error) {
-	pos, err := node.kvPos(idx)
+	pos, err := node.keyValuePosition(idx)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -257,8 +257,8 @@ func offsetPos(node BNode, idx uint16) (uint16, error) {
 	return HEADER + 8*node.nkeys() + 2*(idx-1), nil
 }
 
-func (node BNode) nbytes() (uint16, error) {
-	return node.kvPos(node.nkeys()) // uses the offset value of the last key
+func (node BNode) usedBytes() (uint16, error) {
+	return node.keyValuePosition(node.nkeys()) // uses the offset value of the last key
 }
 
 func (node BNode) setOffset(idx uint16, offset uint16) error {
@@ -275,7 +275,7 @@ func (node BNode) AppendKV(idx uint16, ptr uint64, key []byte, val []byte) error
 	// ptrs
 	node.setPtr(idx, ptr)
 	// KVs
-	pos, err := node.kvPos(idx) // uses the offset value of the previous key
+	pos, err := node.keyValuePosition(idx) // uses the offset value of the previous key
 	if err != nil {
 		return err
 	}
