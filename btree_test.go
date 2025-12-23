@@ -108,6 +108,12 @@ type MockStorage struct {
 	testing *testing.T
 }
 
+func (m *MockStorage) DumpPages() {
+	for k, v := range m.storage {
+		m.testing.Logf("Node hexdump (key: %d):\n%s", k, hex.Dump(v))
+	}
+}
+
 // Delete implements Storage.
 func (m *MockStorage) Delete(i uint64) {
 	delete(m.storage, i)
@@ -213,35 +219,38 @@ func TestInsertTooLargeValue(t *testing.T) {
 }
 
 func TestInsertTooForceSplit(t *testing.T) {
-	tree := NewBTree(&MockStorage{
+	storage := MockStorage{
 		testing: t,
-		storage: map[uint64][]byte{}},
-	)
+		storage: map[uint64][]byte{},
+	}
+	tree := NewBTree(&storage)
 
 	err := tree.Insert(
-		[]byte(strings.Repeat("a", 1000)),
-		[]byte(strings.Repeat("a", 3000)),
+		[]byte(strings.Repeat("ak", 500)),
+		[]byte(strings.Repeat("av", 1500)),
 	)
 	if err != nil {
 		t.Fatalf("should not raised err: %v", err)
 	}
 
 	err = tree.Insert(
-		[]byte(strings.Repeat("b", 1000)),
-		[]byte(strings.Repeat("b", 3000)),
+		[]byte(strings.Repeat("bk", 500)),
+		[]byte(strings.Repeat("bv", 1500)),
 	)
 	if err != nil {
 		t.Fatalf("should not raised err: %v", err)
 	}
 
-	result, ok, err := tree.Get([]byte(strings.Repeat("a", 1000)))
+	result, ok, err := tree.Get([]byte(strings.Repeat("ak", 500)))
 	if err != nil {
+		storage.DumpPages()
 		t.Fatalf("should not raised err: %v", err)
 	}
 	if !ok {
-		t.Fatal("should get ok as result")
+		storage.DumpPages()
+		t.Fatalf("should get ok as result, but got ok=%v", ok)
 	}
-	if !bytes.Equal(result, []byte(strings.Repeat("a", 3000))) {
+	if !bytes.Equal(result, []byte(strings.Repeat("av", 1500))) {
 		t.Fatal("should get ok as result")
 	}
 

@@ -123,7 +123,6 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 			if err != nil {
 				return err
 			}
-
 			new.AppendKV(1, rightPtr, rightKey, nil)
 
 			if len(new) > BTREE_PAGE_SIZE {
@@ -316,12 +315,16 @@ func (node BNode) LookupLE(key []byte) (uint16, error) {
 			return i, nil
 		}
 		if cmp > 0 {
-			result := i - 1
-			return result, nil
+			// Key is smaller than current key
+			if i == 0 {
+				// Key is smaller than all keys, return first pointer (index 0)
+				return 0, nil
+			}
+			return i - 1, nil
 		}
 	}
-	result := i - 1
-	return result, nil
+	// Key is larger than or equal to all keys, return last index
+	return nkeys - 1, nil
 }
 
 func (node BNode) Lookup(key []byte) (uint16, bool, error) {
@@ -332,11 +335,17 @@ func (node BNode) Lookup(key []byte) (uint16, bool, error) {
 		if err != nil {
 			return 0, false, err
 		}
-		if bytes.Equal(currentKey, key) {
+		cmp := bytes.Compare(currentKey, key)
+		if cmp == 0 {
 			return i, true, nil
 		}
+		if cmp > 0 {
+			// Key should be inserted before this key
+			return i, false, nil
+		}
 	}
-	return 0, false, nil
+	// Key is larger than all existing keys, insert at the end
+	return nkeys, false, nil
 }
 
 func (node BNode) Split() (BNode, BNode) {
