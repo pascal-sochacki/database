@@ -4,17 +4,26 @@ import (
 	"bytes"
 	"encoding/hex"
 	"math/rand"
+	"strings"
 	"testing"
 )
 
 // assertKV checks if a key-value pair at the given index matches expected values
 func assertKV(t *testing.T, node BNode, idx uint16, expectedKey, expectedVal []byte) {
 	t.Helper()
-	if !bytes.Equal(node.getKey(idx), expectedKey) {
-		t.Fatalf("key mismatch at index %d: got %s, want %s", idx, node.getKey(idx), expectedKey)
+	currentKey, err := node.getKey(idx)
+	if err != nil {
+		t.Fatal("should not err")
 	}
-	if !bytes.Equal(node.getVal(idx), expectedVal) {
-		t.Fatalf("value mismatch at index %d: got %s, want %s", idx, node.getVal(idx), expectedVal)
+	if !bytes.Equal(currentKey, expectedKey) {
+		t.Fatalf("key mismatch at index %d: got %s, want %s", idx, currentKey, expectedKey)
+	}
+	currentVal, err := node.getVal(idx)
+	if err != nil {
+		t.Fatal("should not err")
+	}
+	if !bytes.Equal(currentVal, expectedVal) {
+		t.Fatalf("value mismatch at index %d: got %s, want %s", idx, currentVal, expectedVal)
 	}
 }
 
@@ -30,8 +39,9 @@ func TestWriteAndRead(t *testing.T) {
 
 	assertKV(t, node, 0, []byte("k1"), []byte("hi"))
 	assertKV(t, node, 1, []byte("k3"), []byte("hello"))
-	if node.nbytes() != 43 {
-		t.Fatalf("wrong size is: %d", node.nbytes())
+	bytes, _ := node.nbytes()
+	if bytes != 43 {
+		t.Fatalf("wrong size is: %d", bytes)
 	}
 }
 
@@ -68,7 +78,7 @@ func TestLookupLE(t *testing.T) {
 	node.AppendKV(0, 0, []byte("k1"), []byte("hi"))
 	node.AppendKV(1, 0, []byte("k3"), []byte("world"))
 
-	idx := node.LookupLE([]byte("k2"))
+	idx, _ := node.LookupLE([]byte("k2"))
 
 	if idx != 0 {
 		t.Fatalf("wrong idx is: %d", idx)
@@ -89,6 +99,7 @@ func TestSplit(t *testing.T) {
 
 type MockStorage struct {
 	storage map[uint64][]byte
+	testing *testing.T
 }
 
 // Delete implements Storage.
@@ -103,6 +114,10 @@ func (m *MockStorage) Get(i uint64) []byte {
 
 // New implements Storage.
 func (m *MockStorage) New(d []byte) uint64 {
+	if len(d) > BTREE_PAGE_SIZE {
+		m.testing.Logf("Node hexdump:\n%s", hex.Dump(d))
+		m.testing.Errorf("New() called with %d bytes, exceeds BTREE_PAGE_SIZE (%d)", len(d), BTREE_PAGE_SIZE)
+	}
 	idx := rand.Uint64()
 	m.storage[idx] = d
 	return idx
@@ -111,15 +126,99 @@ func (m *MockStorage) New(d []byte) uint64 {
 var _ Storage = &MockStorage{}
 
 func TestInsertTree(t *testing.T) {
-	tree := NewBTree(&MockStorage{storage: map[uint64][]byte{}})
+	tree := NewBTree(&MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{}},
+	)
+	tree.Insert([]byte("hello"), []byte("world"))
+	tree.Insert([]byte("hallo"), []byte("welt"))
+
+	result, ok, _ := tree.Get([]byte("hello"))
+	if !ok || !bytes.Equal(result, []byte("world")) {
+		t.Fatalf("value mismatch got %s, want %s", result, "world")
+	}
+
+	result, ok, _ = tree.Get([]byte("hallo"))
+	if !ok || !bytes.Equal(result, []byte("welt")) {
+		t.Fatalf("value mismatch got %s, want %s", result, "welft")
+	}
+
+	result, ok, _ = tree.Get([]byte("servus"))
+	if ok || bytes.Equal(result, []byte("welt")) {
+		t.Fatalf("value mismatch got %s, want %s", result, "welft")
+	}
+}
+
+func TestUpdateTree(t *testing.T) {
+	tree := NewBTree(&MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{}},
+	)
 	tree.Insert([]byte("hello"), []byte("world"))
 
-	result, ok := tree.Get([]byte("hello"))
-	if ok && bytes.Equal(result, []byte("world")) {
-
-	} else {
+	result, ok, _ := tree.Get([]byte("hello"))
+	if !ok || !bytes.Equal(result, []byte("world")) {
 		t.Fatalf("value mismatch got %s, want %s", result, "world")
+	}
 
+	tree.Insert([]byte("hello"), []byte("welt"))
+
+	result, ok, _ = tree.Get([]byte("hello"))
+	if !ok || !bytes.Equal(result, []byte("welt")) {
+		t.Fatalf("value mismatch got %s, want %s", result, "welt")
+	}
+}
+
+func TestInsertTooLargeKey(t *testing.T) {
+	tree := NewBTree(&MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{}},
+	)
+	err := tree.Insert([]byte(strings.Repeat("a", 1001)), []byte("world"))
+	if err == nil {
+		t.Fatal("should raised err")
+	}
+}
+
+func TestInsertTooLargeValue(t *testing.T) {
+	tree := NewBTree(&MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{}},
+	)
+	err := tree.Insert([]byte("hello"), []byte(strings.Repeat("a", 3001)))
+	if err == nil {
+		t.Fatal("should raised err")
+	}
+}
+
+func TestInsertTooForceSplit(t *testing.T) {
+	tree := NewBTree(&MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{}},
+	)
+
+	err := tree.Insert(
+		[]byte(strings.Repeat("a", 1000)),
+		[]byte(strings.Repeat("a", 3000)),
+	)
+	if err != nil {
+		t.Fatal("should not raised err")
+	}
+
+	err = tree.Insert(
+		[]byte(strings.Repeat("b", 1000)),
+		[]byte(strings.Repeat("b", 3000)),
+	)
+	if err != nil {
+		t.Fatal("should not raised err")
+	}
+
+	result, ok, _ := tree.Get([]byte(strings.Repeat("a", 1000)))
+	if !ok {
+		t.Fatal("should get ok as result")
+	}
+	if !bytes.Equal(result, []byte(strings.Repeat("a", 3000))) {
+		t.Fatal("should get ok as result")
 	}
 
 }
