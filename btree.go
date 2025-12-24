@@ -46,7 +46,6 @@ func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
 	}
 
 	root := BNode(tree.storage.Get(tree.Root))
-
 	current := root
 	for {
 		if current.nodeType() == BNODE_LEAF {
@@ -254,15 +253,6 @@ func (old BNode) InsertValue(idx uint16, key []byte, val []byte) BNode {
 	return new
 }
 
-func (old BNode) InsertPtr(idx uint16, ptr uint64) BNode {
-	new := make(BNode, BTREE_PAGE_SIZE*2)
-	new.setHeader(BNODE_LEAF, old.nkeys()+1)
-	new.AppendRange(old, 0, 0, idx)                   // copy the keys before `idx`
-	new.AppendKV(idx, ptr, []byte{}, []byte{})        // the new key
-	new.AppendRange(old, idx+1, idx, old.nkeys()-idx) // keys from `idx`
-	return new
-}
-
 func (old BNode) UpdatePtr(idx uint16, ptr uint64) BNode {
 	new := make(BNode, BTREE_PAGE_SIZE*2)
 	new.setHeader(old.nodeType(), old.nkeys())
@@ -366,155 +356,127 @@ func (node BNode) Split() (BNode, BNode) {
 	return left, right
 }
 
+// splitIfNeeded splits a node if it exceeds page size and returns the result node
+func (node BNode) splitIfNeeded(storage Storage) (BNode, error) {
+	bytes, err := node.usedBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	if bytes < BTREE_PAGE_SIZE {
+		return node[:BTREE_PAGE_SIZE], nil
+	}
+
+	// Node is too large - need to split
+	return node.splitLarge(storage)
+}
+
+// splitLarge splits an oversized node into multiple children and creates a parent
+func (node BNode) splitLarge(storage Storage) (BNode, error) {
+	nodes := []BNode{}
+	left, right := node.Split()
+
+	leftSize, err := left.usedBytes()
+	if err != nil {
+		return nil, err
+	}
+	rightSize, err := right.usedBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if left child needs further splitting
+	if leftSize > BTREE_PAGE_SIZE {
+		l1, l2 := left.Split()
+		nodes = append(nodes, l1[:BTREE_PAGE_SIZE])
+		nodes = append(nodes, l2[:BTREE_PAGE_SIZE])
+	} else {
+		nodes = append(nodes, left[:BTREE_PAGE_SIZE])
+	}
+
+	// Check if right child needs further splitting
+	if rightSize > BTREE_PAGE_SIZE {
+		r1, r2 := right.Split()
+		nodes = append(nodes, r1[:BTREE_PAGE_SIZE])
+		nodes = append(nodes, r2[:BTREE_PAGE_SIZE])
+	} else {
+		nodes = append(nodes, right[:BTREE_PAGE_SIZE])
+	}
+
+	// Create parent node with all split children
+	result := BNode(make([]byte, BTREE_PAGE_SIZE))
+	result.setHeader(BNODE_NODE, uint16(len(nodes)))
+
+	for i, v := range nodes {
+		ptr := storage.New(v)
+		key, err := v.getKey(0)
+		if err != nil {
+			return nil, err
+		}
+		result.AppendKV(uint16(i), ptr, key, nil)
+	}
+
+	if len(result) > BTREE_PAGE_SIZE {
+		return nil, fmt.Errorf("size too large after split")
+	}
+	return result[:BTREE_PAGE_SIZE], nil
+}
+
 func (node BNode) Insert(key []byte, val []byte, storage Storage) (BNode, error) {
 	if node.nodeType() == BNODE_NODE {
-		idx, err := node.LookupLE(key)
-		if err != nil {
-			return nil, err
-		}
-		ptr, err := node.getPtr(idx)
-		if err != nil {
-			return nil, err
-		}
-
-		child := BNode(storage.Get(ptr))
-		newChild, err := child.Insert(key, val, storage)
-		if err != nil {
-			return nil, err
-		}
-
-		// Store new child
-		newChildPtr := storage.New(newChild)
-		// Mark old child for deletion (will be deleted after root update)
-		storage.Delete(ptr)
-
-		// Update the child pointer at this index
-		new := node.UpdatePtr(idx, newChildPtr)
-
-		// Check if this internal node needs to split
-		bytes, err := new.usedBytes()
-		if err != nil {
-			return nil, err
-		}
-
-		if bytes < BTREE_PAGE_SIZE {
-			new = new[:BTREE_PAGE_SIZE]
-			return new, nil
-		}
-
-		// Internal node is too large - need to split
-		nodes := []BNode{}
-		left, right := new.Split()
-
-		leftSize, err := left.usedBytes()
-		if err != nil {
-			return nil, err
-		}
-		rightSize, err := right.usedBytes()
-		if err != nil {
-			return nil, err
-		}
-
-		if leftSize > BTREE_PAGE_SIZE {
-			l1, l2 := left.Split()
-			nodes = append(nodes, l1[:BTREE_PAGE_SIZE])
-			nodes = append(nodes, l2[:BTREE_PAGE_SIZE])
-		} else {
-			nodes = append(nodes, left[:BTREE_PAGE_SIZE])
-		}
-
-		if rightSize > BTREE_PAGE_SIZE {
-			r1, r2 := right.Split()
-			nodes = append(nodes, r1[:BTREE_PAGE_SIZE])
-			nodes = append(nodes, r2[:BTREE_PAGE_SIZE])
-		} else {
-			nodes = append(nodes, right[:BTREE_PAGE_SIZE])
-		}
-
-		result := BNode(make([]byte, BTREE_PAGE_SIZE))
-		result.setHeader(BNODE_NODE, uint16(len(nodes)))
-
-		for i, v := range nodes {
-			ptr := storage.New(v)
-			key, err := v.getKey(0)
-			if err != nil {
-				return nil, err
-			}
-			result.AppendKV(uint16(i), ptr, key, nil)
-		}
-
-		if len(result) > BTREE_PAGE_SIZE {
-			return nil, fmt.Errorf("size too large after split in internal node")
-		}
-		result = result[:BTREE_PAGE_SIZE]
-		return result, nil
+		return node.insertIntoInternal(key, val, storage)
 	}
 
 	if node.nodeType() == BNODE_LEAF {
-		idx, ok, err := node.Lookup(key)
-		if err != nil {
-			return nil, err
-		}
-		var new BNode
-		if ok {
-			new = node.UpdateValue(idx, key, val)
-		} else {
-			new = node.InsertValue(idx, key, val)
-		}
-
-		bytes, err := new.usedBytes()
-		if err != nil {
-			return nil, err
-		}
-		if bytes < BTREE_PAGE_SIZE {
-			new = new[:BTREE_PAGE_SIZE]
-		} else {
-			nodes := []BNode{}
-			left, right := new.Split()
-
-			leftSize, err := left.usedBytes()
-			if err != nil {
-				return nil, err
-			}
-			rightSize, err := right.usedBytes()
-			if err != nil {
-				return nil, err
-			}
-
-			if leftSize > BTREE_PAGE_SIZE {
-				l1, l2 := left.Split()
-				nodes = append(nodes, l1[:BTREE_PAGE_SIZE])
-				nodes = append(nodes, l2[:BTREE_PAGE_SIZE])
-			} else {
-				nodes = append(nodes, left[:BTREE_PAGE_SIZE])
-			}
-
-			if rightSize > BTREE_PAGE_SIZE {
-				r1, r2 := right.Split()
-				nodes = append(nodes, r1[:BTREE_PAGE_SIZE])
-				nodes = append(nodes, r2[:BTREE_PAGE_SIZE])
-			} else {
-				nodes = append(nodes, right[:BTREE_PAGE_SIZE])
-			}
-
-			new = BNode(make([]byte, BTREE_PAGE_SIZE))
-			new.setHeader(BNODE_NODE, uint16(len(nodes)))
-
-			for i, v := range nodes {
-				ptr := storage.New(v)
-				key, err := v.getKey(0)
-				if err != nil {
-					return nil, err
-				}
-				new.AppendKV(uint16(i), ptr, key, nil)
-			}
-
-			if len(new) > BTREE_PAGE_SIZE {
-				return nil, fmt.Errorf("size too large after split in leaf")
-			}
-			new = new[:BTREE_PAGE_SIZE]
-		}
-		return new, nil
+		return node.insertIntoLeaf(key, val, storage)
 	}
+
 	return nil, fmt.Errorf("should not happen")
+}
+
+// insertIntoInternal handles insertion into an internal node
+func (node BNode) insertIntoInternal(key []byte, val []byte, storage Storage) (BNode, error) {
+	idx, err := node.LookupLE(key)
+	if err != nil {
+		return nil, err
+	}
+
+	ptr, err := node.getPtr(idx)
+	if err != nil {
+		return nil, err
+	}
+
+	child := BNode(storage.Get(ptr))
+	newChild, err := child.Insert(key, val, storage)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store new child and mark old for deletion
+	newChildPtr := storage.New(newChild)
+	storage.Delete(ptr)
+
+	// Update the child pointer at this index
+	new := node.UpdatePtr(idx, newChildPtr)
+
+	// Split if needed
+	return new.splitIfNeeded(storage)
+}
+
+// insertIntoLeaf handles insertion into a leaf node
+func (node BNode) insertIntoLeaf(key []byte, val []byte, storage Storage) (BNode, error) {
+	idx, ok, err := node.Lookup(key)
+	if err != nil {
+		return nil, err
+	}
+
+	var new BNode
+	if ok {
+		new = node.UpdateValue(idx, key, val)
+	} else {
+		new = node.InsertValue(idx, key, val)
+	}
+
+	// Split if needed
+	return new.splitIfNeeded(storage)
 }
