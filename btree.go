@@ -11,8 +11,16 @@ const BTREE_MAX_KEY_SIZE = 1000
 const BTREE_MAX_VAL_SIZE = 3000
 const HEADER = 4
 
+// Node format
+// | type | nkeys | pointers   | offsets    | key-values | unused |
+// | 2B   | 2B    | nkeys × 8B | nkeys × 2B | ...        |        |
+
+// Key Values format
+// | key_size | val_size | key | val |
+// | 2B       | 2B       | ... | ... |
+
 func init() {
-	node1max := 4 + 1*8 + 1*2 + 4 + BTREE_MAX_KEY_SIZE + BTREE_MAX_VAL_SIZE
+	node1max := HEADER + 1*8 + 1*2 + 2 + BTREE_MAX_KEY_SIZE + 2 + BTREE_MAX_VAL_SIZE
 	if node1max > BTREE_PAGE_SIZE {
 		panic("assertion failure")
 	}
@@ -48,7 +56,7 @@ func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
 	root := BNode(tree.storage.Get(tree.Root))
 	current := root
 	for {
-		if current.nodeType() == BNODE_LEAF {
+		if current.Type() == BNODE_LEAF {
 			idx, ok, err := current.Lookup(key)
 			if err != nil {
 				return nil, false, err
@@ -73,30 +81,6 @@ func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
 		current = BNode(tree.storage.Get(ptr))
 	}
 
-}
-
-type insertContext struct {
-	storage  Storage
-	toDelete []uint64
-}
-
-func (ctx *insertContext) Get(ptr uint64) []byte {
-	return ctx.storage.Get(ptr)
-}
-
-func (ctx *insertContext) New(data []byte) uint64 {
-	return ctx.storage.New(data)
-}
-
-func (ctx *insertContext) Delete(ptr uint64) {
-	// Don't delete immediately - add to journal
-	ctx.toDelete = append(ctx.toDelete, ptr)
-}
-
-func (ctx *insertContext) CommitDeletions() {
-	for _, ptr := range ctx.toDelete {
-		ctx.storage.Delete(ptr)
-	}
 }
 
 func (t *BTree) Insert(key []byte, val []byte) error {
@@ -125,12 +109,77 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 	return nil
 }
 
-// | type | nkeys | pointers   | offsets    | key-values | unused |
-// | 2B   | 2B    | nkeys × 8B | nkeys × 2B | ...        |        |
+func (t *BTree) Delete(key []byte) error {
+
+	current := BNode(t.storage.Get(t.Root))
+	ctx := &insertContext{storage: t.storage, toDelete: []uint64{}}
+	new, err := current.Delete(key, ctx)
+	if err != nil {
+		return err
+	}
+
+	old := t.Root
+	t.Root = t.storage.New(new)
+
+	// Only delete old pages after root is safely updated
+	ctx.toDelete = append(ctx.toDelete, old)
+	ctx.CommitDeletions()
+	return nil
+}
+
+type insertContext struct {
+	storage  Storage
+	toDelete []uint64
+}
+
+func (ctx *insertContext) Get(ptr uint64) []byte {
+	return ctx.storage.Get(ptr)
+}
+
+func (ctx *insertContext) New(data []byte) uint64 {
+	return ctx.storage.New(data)
+}
+
+func (ctx *insertContext) Delete(ptr uint64) {
+	// Don't delete immediately - add to journal
+	ctx.toDelete = append(ctx.toDelete, ptr)
+}
+
+func (ctx *insertContext) CommitDeletions() {
+	for _, ptr := range ctx.toDelete {
+		ctx.storage.Delete(ptr)
+	}
+}
+
 type BNode []byte
 
-// | key_size | val_size | key | val |
-// | 2B       | 2B       | ... | ... |
+func (node BNode) Insert(key []byte, val []byte, storage Storage) (BNode, error) {
+	if node.Type() == BNODE_NODE {
+		return node.insertIntoInternal(key, val, storage)
+	}
+
+	if node.Type() == BNODE_LEAF {
+		return node.insertIntoLeaf(key, val, storage)
+	}
+
+	return nil, fmt.Errorf("should not happen")
+}
+
+func (node BNode) Delete(key []byte, ctx *insertContext) (BNode, error) {
+	if node.Type() == BNODE_LEAF {
+		idx, ok, err := node.Lookup(key)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return node, nil
+		}
+
+		return node.DeleteValue(idx), nil
+
+	}
+	panic("unimplemented")
+}
 
 type Type uint16
 
@@ -139,27 +188,27 @@ var (
 	BNODE_LEAF Type = 2 // leaf nodes with values
 )
 
-func (node BNode) nodeType() Type {
+func (node BNode) Type() Type {
 	return Type(binary.LittleEndian.Uint16(node[0:2]))
 }
 
-func (node BNode) nkeys() uint16 {
+func (node BNode) Keys() uint16 {
 	return binary.LittleEndian.Uint16(node[2:4])
 }
 
 func (node BNode) getPtr(idx uint16) (uint64, error) {
-	if idx >= node.nkeys() {
+	if idx >= node.Keys() {
 		return 0, fmt.Errorf("out of bound")
 	}
-	pos := 4 + 8*idx
+	pos := HEADER + 8*idx
 	return binary.LittleEndian.Uint64(node[pos:]), nil
 }
 
 func (node BNode) setPtr(idx uint16, val uint64) error {
-	if idx >= node.nkeys() {
+	if idx >= node.Keys() {
 		return fmt.Errorf("out of bound")
 	}
-	pos := 4 + 8*idx
+	pos := HEADER + 8*idx
 	binary.LittleEndian.PutUint64(node[pos:], val)
 	return nil
 }
@@ -173,15 +222,15 @@ func (node BNode) getOffset(idx uint16) uint16 {
 	if idx == 0 {
 		return 0
 	}
-	pos := 4 + 8*node.nkeys() + 2*(idx-1)
+	pos := HEADER + 8*node.Keys() + 2*(idx-1)
 	return binary.LittleEndian.Uint16(node[pos:])
 }
 
 func (node BNode) keyValuePosition(idx uint16) (uint16, error) {
-	if idx > node.nkeys() {
+	if idx > node.Keys() {
 		return 0, fmt.Errorf("out of bound")
 	}
-	return 4 + 8*node.nkeys() + 2*node.nkeys() + node.getOffset(idx), nil
+	return HEADER + 8*node.Keys() + 2*node.Keys() + node.getOffset(idx), nil
 }
 
 func (node BNode) getKey(idx uint16) ([]byte, error) {
@@ -190,7 +239,7 @@ func (node BNode) getKey(idx uint16) ([]byte, error) {
 		return []byte{}, err
 	}
 	klen := binary.LittleEndian.Uint16(node[pos:])
-	return node[pos+4:][:klen], nil
+	return node[pos+HEADER:][:klen], nil
 }
 
 func (node BNode) getVal(idx uint16) ([]byte, error) {
@@ -200,19 +249,19 @@ func (node BNode) getVal(idx uint16) ([]byte, error) {
 	}
 	klen := binary.LittleEndian.Uint16(node[pos+0:])
 	vlen := binary.LittleEndian.Uint16(node[pos+2:])
-	return node[pos+4+klen:][:vlen], nil
+	return node[pos+HEADER+klen:][:vlen], nil
 }
 
 func offsetPos(node BNode, idx uint16) (uint16, error) {
-	if 1 > idx || idx > node.nkeys() {
+	if 1 > idx || idx > node.Keys() {
 		return 0, fmt.Errorf("out of bound")
 
 	}
-	return HEADER + 8*node.nkeys() + 2*(idx-1), nil
+	return HEADER + 8*node.Keys() + 2*(idx-1), nil
 }
 
 func (node BNode) usedBytes() (uint16, error) {
-	return node.keyValuePosition(node.nkeys()) // uses the offset value of the last key
+	return node.keyValuePosition(node.Keys()) // uses the offset value of the last key
 }
 
 func (node BNode) setOffset(idx uint16, offset uint16) error {
@@ -237,28 +286,36 @@ func (node BNode) AppendKV(idx uint16, ptr uint64, key []byte, val []byte) error
 	binary.LittleEndian.PutUint16(node[pos+0:], uint16(len(key)))
 	binary.LittleEndian.PutUint16(node[pos+2:], uint16(len(val)))
 	// KV data
-	copy(node[pos+4:], key)
-	copy(node[pos+4+uint16(len(key)):], val)
+	copy(node[pos+HEADER:], key)
+	copy(node[pos+HEADER+uint16(len(key)):], val)
 	// update the offset value for the next key
-	node.setOffset(idx+1, node.getOffset(idx)+4+uint16((len(key)+len(val))))
+	node.setOffset(idx+1, node.getOffset(idx)+HEADER+uint16((len(key)+len(val))))
 	return nil
 }
 
 func (old BNode) InsertValue(idx uint16, key []byte, val []byte) BNode {
 	new := make(BNode, BTREE_PAGE_SIZE*2)
-	new.setHeader(BNODE_LEAF, old.nkeys()+1)
-	new.AppendRange(old, 0, 0, idx)                   // copy the keys before `idx`
-	new.AppendKV(idx, 0, key, val)                    // the new key
-	new.AppendRange(old, idx+1, idx, old.nkeys()-idx) // keys from `idx`
+	new.setHeader(BNODE_LEAF, old.Keys()+1)
+	new.AppendRange(old, 0, 0, idx)                  // copy the keys before `idx`
+	new.AppendKV(idx, 0, key, val)                   // the new key
+	new.AppendRange(old, idx+1, idx, old.Keys()-idx) // keys from `idx`
 	return new
 }
 
 func (old BNode) UpdatePtr(idx uint16, ptr uint64) BNode {
 	new := make(BNode, BTREE_PAGE_SIZE*2)
-	new.setHeader(old.nodeType(), old.nkeys())
-	new.AppendRange(old, 0, 0, idx)                         // copy the keys before `idx`
-	new.AppendKV(idx, ptr, []byte{}, []byte{})              // update the ptr at idx
-	new.AppendRange(old, idx+1, idx+1, old.nkeys()-(idx+1)) // copy keys after `idx`
+	new.setHeader(old.Type(), old.Keys())
+	new.AppendRange(old, 0, 0, idx)                        // copy the keys before `idx`
+	new.AppendKV(idx, ptr, []byte{}, []byte{})             // update the ptr at idx
+	new.AppendRange(old, idx+1, idx+1, old.Keys()-(idx+1)) // copy keys after `idx`
+	return new
+}
+
+func (old BNode) DeleteValue(idx uint16) BNode {
+	new := make(BNode, BTREE_PAGE_SIZE)
+	new.setHeader(BNODE_LEAF, old.Keys())
+	new.AppendRange(old, 0, 0, idx)
+	new.AppendRange(old, idx, idx+1, old.Keys()-(idx))
 	return new
 }
 
@@ -266,10 +323,10 @@ func (old BNode) UpdateValue(
 	idx uint16, key []byte, val []byte,
 ) BNode {
 	new := make(BNode, BTREE_PAGE_SIZE)
-	new.setHeader(BNODE_LEAF, old.nkeys())
+	new.setHeader(BNODE_LEAF, old.Keys())
 	new.AppendRange(old, 0, 0, idx)
 	new.AppendKV(idx, 0, key, val)
-	new.AppendRange(old, idx+1, idx+1, old.nkeys()-(idx+1))
+	new.AppendRange(old, idx+1, idx+1, old.Keys()-(idx+1))
 	return new
 }
 
@@ -297,7 +354,7 @@ func (new BNode) AppendRange(old BNode, dstNew uint16, srcOld uint16, n uint16) 
 }
 
 func (node BNode) LookupLE(key []byte) (uint16, error) {
-	nkeys := node.nkeys()
+	nkeys := node.Keys()
 	var i uint16
 	for i = range nkeys {
 		currentKey, err := node.getKey(i)
@@ -322,7 +379,7 @@ func (node BNode) LookupLE(key []byte) (uint16, error) {
 }
 
 func (node BNode) Lookup(key []byte) (uint16, bool, error) {
-	nkeys := node.nkeys()
+	nkeys := node.Keys()
 	var i uint16
 	for i = range nkeys {
 		currentKey, err := node.getKey(i)
@@ -343,8 +400,8 @@ func (node BNode) Lookup(key []byte) (uint16, bool, error) {
 }
 
 func (node BNode) Split() (BNode, BNode) {
-	nleft := node.nkeys() / 2
-	nright := node.nkeys() - nleft
+	nleft := node.Keys() / 2
+	nright := node.Keys() - nleft
 
 	left, right := make(BNode, BTREE_PAGE_SIZE*2), make(BNode, BTREE_PAGE_SIZE*2)
 	left.setHeader(BNODE_LEAF, nleft)
@@ -420,18 +477,6 @@ func (node BNode) splitLarge(storage Storage) (BNode, error) {
 		return nil, fmt.Errorf("size too large after split")
 	}
 	return result[:BTREE_PAGE_SIZE], nil
-}
-
-func (node BNode) Insert(key []byte, val []byte, storage Storage) (BNode, error) {
-	if node.nodeType() == BNODE_NODE {
-		return node.insertIntoInternal(key, val, storage)
-	}
-
-	if node.nodeType() == BNODE_LEAF {
-		return node.insertIntoLeaf(key, val, storage)
-	}
-
-	return nil, fmt.Errorf("should not happen")
 }
 
 // insertIntoInternal handles insertion into an internal node

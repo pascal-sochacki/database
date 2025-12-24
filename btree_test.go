@@ -133,7 +133,7 @@ func (m *MockStorage) New(d []byte) uint64 {
 	}
 	idx := rand.Uint64()
 	node := BNode(d)
-	m.testing.Logf("creating page: %d type: %d", idx, node.nodeType())
+	m.testing.Logf("creating page: %d type: %d", idx, node.Type())
 	m.storage[idx] = d
 	return idx
 }
@@ -349,10 +349,10 @@ func debugNode(tree BTree, t *testing.T, nodePtr uint64, depth int) {
 	}
 
 	node := BNode(tree.storage.Get(nodePtr))
-	t.Logf("%sNode %d (type: %d, nkeys: %d)\n", indent, nodePtr, node.nodeType(), node.nkeys())
+	t.Logf("%sNode %d (type: %d, nkeys: %d)\n", indent, nodePtr, node.Type(), node.Keys())
 
-	if node.nodeType() == BNODE_NODE {
-		for i := uint16(0); i < node.nkeys(); i++ {
+	if node.Type() == BNODE_NODE {
+		for i := uint16(0); i < node.Keys(); i++ {
 			ptr, err := node.getPtr(i)
 			if err != nil {
 				t.Logf("%sError getting ptr %d: %v\n", indent, i, err)
@@ -395,4 +395,33 @@ func TestForceInternalNodeSplit(t *testing.T) {
 			t.Fatalf("value mismatch for key %d: got %s, want %s", i, result, expectedVal)
 		}
 	}
+}
+
+func TestDeletion(t *testing.T) {
+	storage := &MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{},
+	}
+	tree := NewBTree(storage)
+	key := []byte(strings.Repeat("a", 1000))
+	val := []byte(strings.Repeat("b", 3000))
+	err := tree.Insert(key, val)
+	if err != nil {
+		t.Fatalf("insert failed: %v", err)
+	}
+
+	err = tree.Delete(key)
+	if err != nil {
+		t.Fatalf("insert failed: %v", err)
+	}
+
+	val, found, err := tree.Get(key)
+
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
+	if found {
+		t.Fatalf("should not get found as result, but got ok=%v", found)
+	}
+
 }
