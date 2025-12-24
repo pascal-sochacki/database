@@ -165,7 +165,7 @@ func (node BNode) Insert(key []byte, val []byte, storage Storage) (BNode, error)
 	return nil, fmt.Errorf("should not happen")
 }
 
-func (node BNode) Delete(key []byte, ctx *insertContext) (BNode, error) {
+func (node BNode) Delete(key []byte, storage Storage) (BNode, error) {
 	if node.Type() == BNODE_LEAF {
 		idx, ok, err := node.Lookup(key)
 		if err != nil {
@@ -176,6 +176,30 @@ func (node BNode) Delete(key []byte, ctx *insertContext) (BNode, error) {
 		}
 
 		return node.DeleteValue(idx), nil
+
+	}
+	if node.Type() == BNODE_NODE {
+		idx, err := node.LookupLE(key)
+		if err != nil {
+			return nil, err
+		}
+
+		ptr, err := node.getPtr(idx)
+		if err != nil {
+			return nil, err
+		}
+
+		child := BNode(storage.Get(ptr))
+		newChild, err := child.Delete(key, storage)
+		if err != nil {
+			return nil, err
+		}
+		newChildPtr := storage.New(newChild)
+		storage.Delete(ptr)
+
+		// Update the child pointer at this index
+		new := node.UpdatePtr(idx, newChildPtr)
+		return new.splitIfNeeded(storage)
 
 	}
 	panic("unimplemented")
@@ -313,9 +337,9 @@ func (old BNode) UpdatePtr(idx uint16, ptr uint64) BNode {
 
 func (old BNode) DeleteValue(idx uint16) BNode {
 	new := make(BNode, BTREE_PAGE_SIZE)
-	new.setHeader(BNODE_LEAF, old.Keys())
+	new.setHeader(BNODE_LEAF, old.Keys()-1)
 	new.AppendRange(old, 0, 0, idx)
-	new.AppendRange(old, idx, idx+1, old.Keys()-(idx))
+	new.AppendRange(old, idx, idx+1, old.Keys()-(idx+1))
 	return new
 }
 

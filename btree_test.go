@@ -397,14 +397,14 @@ func TestForceInternalNodeSplit(t *testing.T) {
 	}
 }
 
-func TestDeletion(t *testing.T) {
+func TestDeletionRootIsLeaf(t *testing.T) {
 	storage := &MockStorage{
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
 	tree := NewBTree(storage)
 	key := []byte(strings.Repeat("a", 1000))
-	val := []byte(strings.Repeat("b", 3000))
+	val := []byte(strings.Repeat("a", 3000))
 	err := tree.Insert(key, val)
 	if err != nil {
 		t.Fatalf("insert failed: %v", err)
@@ -415,6 +415,35 @@ func TestDeletion(t *testing.T) {
 		t.Fatalf("insert failed: %v", err)
 	}
 
+	val, found, err := tree.Get(key)
+
+	if err != nil {
+		t.Fatalf("should not raised err: %v", err)
+	}
+	if found {
+		t.Fatalf("should not get found as result, but got ok=%v", found)
+	}
+
+}
+
+func TestDeletionRootIsInternal(t *testing.T) {
+	storage := &MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{},
+	}
+	tree := NewBTree(storage)
+	key := []byte(strings.Repeat("a", 1000))
+	val := []byte(strings.Repeat("a", 3000))
+	err := tree.Insert(key, val)
+
+	key = []byte(strings.Repeat("b", 1000))
+	val = []byte(strings.Repeat("b", 3000))
+	err = tree.Insert(key, val)
+
+	err = tree.Delete(key)
+	if err != nil {
+		t.Fatalf("insert failed: %v", err)
+	}
 	val, found, err := tree.Get(key)
 
 	if err != nil {
