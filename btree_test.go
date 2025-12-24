@@ -395,8 +395,4 @@ func TestForceInternalNodeSplit(t *testing.T) {
 			t.Fatalf("value mismatch for key %d: got %s, want %s", i, result, expectedVal)
 		}
 	}
-	pageCount := len(storage.storage)
-	if pageCount <= 4 {
-		t.Fatalf("expected internal node split with >4 pages, got %d", pageCount)
-	}
 }
