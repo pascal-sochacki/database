@@ -15,6 +15,45 @@ const (
 	INITIAL_MMAP_MB = 1 // 1MB initial chunk
 )
 
+type KV struct {
+	storage *MMapStorage
+}
+
+func newKV(filename string) (*KV, error) {
+	storage := &MMapStorage{Path: filename}
+	err := storage.Open()
+	if err != nil {
+		return nil, err
+	}
+	return &KV{
+		storage: storage,
+	}, nil
+}
+
+func (kv *KV) Close() error {
+	return kv.storage.Close()
+}
+
+func (kv *KV) Insert(key []byte, val []byte) error {
+	err := kv.storage.tree.Insert(key, val)
+	if err != nil {
+		return nil
+	}
+	return kv.storage.Sync()
+}
+
+func (kv *KV) Get(key []byte) ([]byte, bool, error) {
+	return kv.storage.tree.Get(key)
+}
+
+func (kv *KV) Delete(key []byte) error {
+	err := kv.storage.tree.Delete(key)
+	if err != nil {
+		return nil
+	}
+	return kv.storage.Sync()
+}
+
 type MMapStorage struct {
 	Path string
 

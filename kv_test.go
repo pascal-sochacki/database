@@ -54,37 +54,32 @@ func TestKVPersistence(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	// Phase 1: Insert data and close
-	db1 := &MMapStorage{Path: dbPath}
-	if err := db1.Open(); err != nil {
+	db1, err := newKV(dbPath)
+	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
 
-	if err := db1.tree.Insert([]byte("key1"), []byte("value1")); err != nil {
+	if err := db1.Insert([]byte("key1"), []byte("value1")); err != nil {
 		t.Fatalf("failed to insert key1: %v", err)
 	}
 
-	if err := db1.tree.Insert([]byte("key2"), []byte("value2")); err != nil {
+	if err := db1.Insert([]byte("key2"), []byte("value2")); err != nil {
 		t.Fatalf("failed to insert key2: %v", err)
-	}
-
-	if err := db1.Sync(); err != nil {
-		t.Fatalf("failed to sync database: %v", err)
 	}
 
 	if err := db1.Close(); err != nil {
 		t.Fatalf("failed to close database: %v", err)
 	}
 
+	db2, err := newKV(dbPath)
 	// Phase 2: Reopen and verify data
-	db2 := &MMapStorage{Path: dbPath}
-	if err := db2.Open(); err != nil {
+	if err != nil {
 		t.Fatalf("failed to reopen database: %v", err)
 	}
 	defer db2.Close()
 
 	// Verify key1
-	val, ok, err := db2.tree.Get([]byte("key1"))
+	val, ok, err := db2.Get([]byte("key1"))
 	if err != nil {
 		t.Fatalf("failed to get key1: %v", err)
 	}
@@ -93,7 +88,7 @@ func TestKVPersistence(t *testing.T) {
 	}
 
 	// Verify key2
-	val, ok, err = db2.tree.Get([]byte("key2"))
+	val, ok, err = db2.Get([]byte("key2"))
 	if err != nil {
 		t.Fatalf("failed to get key2: %v", err)
 	}
