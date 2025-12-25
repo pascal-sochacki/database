@@ -27,9 +27,9 @@ func init() {
 }
 
 type Storage interface {
-	Get(uint64) []byte
-	New([]byte) uint64
-	Delete(uint64)
+	Get(uint64) ([]byte, error)
+	New([]byte) (uint64, error)
+	Delete(uint64) error
 }
 
 type BTree struct {
@@ -37,15 +37,18 @@ type BTree struct {
 	storage Storage
 }
 
-func NewBTree(storage Storage) BTree {
+func NewBTree(storage Storage) (BTree, error) {
 	root := BNode(make([]byte, BTREE_PAGE_SIZE))
 	root.setHeader(BNODE_LEAF, 0)
-	idx := storage.New(root)
+	idx, err := storage.New(root)
+	if err != nil {
+		return BTree{}, err
+	}
 
 	return BTree{
 		Root:    idx,
 		storage: storage,
-	}
+	}, nil
 }
 
 func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
@@ -53,7 +56,12 @@ func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	root := BNode(tree.storage.Get(tree.Root))
+	data, err := tree.storage.Get(tree.Root)
+	if err != nil {
+		return nil, false, err
+	}
+	root := BNode(data)
+
 	current := root
 	for {
 		if current.Type() == BNODE_LEAF {
@@ -78,7 +86,12 @@ func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
 			return nil, false, err
 		}
 
-		current = BNode(tree.storage.Get(ptr))
+		data, err := tree.storage.Get(ptr)
+		if err != nil {
+			return nil, false, err
+		}
+
+		current = BNode(data)
 	}
 
 }
@@ -91,7 +104,12 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 		return fmt.Errorf("value to large")
 	}
 
-	current := BNode(t.storage.Get(t.Root))
+	data, err := t.storage.Get(t.Root)
+	if err != nil {
+		return err
+	}
+
+	current := BNode(data)
 
 	ctx := &insertContext{storage: t.storage, toDelete: []uint64{}}
 	new, err := current.Insert(key, val, ctx)
@@ -100,7 +118,10 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 	}
 
 	old := t.Root
-	t.Root = t.storage.New(new)
+	t.Root, err = t.storage.New(new)
+	if err != nil {
+		return err
+	}
 
 	// Only delete old pages after root is safely updated
 	ctx.toDelete = append(ctx.toDelete, old)
@@ -110,8 +131,12 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 }
 
 func (t *BTree) Delete(key []byte) error {
+	data, err := t.storage.Get(t.Root)
+	if err != nil {
+		return err
+	}
 
-	current := BNode(t.storage.Get(t.Root))
+	current := BNode(data)
 	ctx := &insertContext{storage: t.storage, toDelete: []uint64{}}
 	new, err := current.Delete(key, ctx)
 	if err != nil {
@@ -119,7 +144,10 @@ func (t *BTree) Delete(key []byte) error {
 	}
 
 	old := t.Root
-	t.Root = t.storage.New(new)
+	t.Root, err = t.storage.New(new)
+	if err != nil {
+		return err
+	}
 
 	// Only delete old pages after root is safely updated
 	ctx.toDelete = append(ctx.toDelete, old)
@@ -132,17 +160,20 @@ type insertContext struct {
 	toDelete []uint64
 }
 
-func (ctx *insertContext) Get(ptr uint64) []byte {
+var _ Storage = &insertContext{}
+
+func (ctx *insertContext) Get(ptr uint64) ([]byte, error) {
 	return ctx.storage.Get(ptr)
 }
 
-func (ctx *insertContext) New(data []byte) uint64 {
+func (ctx *insertContext) New(data []byte) (uint64, error) {
 	return ctx.storage.New(data)
 }
 
-func (ctx *insertContext) Delete(ptr uint64) {
+func (ctx *insertContext) Delete(ptr uint64) error {
 	// Don't delete immediately - add to journal
 	ctx.toDelete = append(ctx.toDelete, ptr)
+	return nil
 }
 
 func (ctx *insertContext) CommitDeletions() {
@@ -188,13 +219,20 @@ func (node BNode) Delete(key []byte, storage Storage) (BNode, error) {
 		if err != nil {
 			return nil, err
 		}
+		data, err := storage.Get(ptr)
+		if err != nil {
+			return nil, err
+		}
 
-		child := BNode(storage.Get(ptr))
+		child := BNode(data)
 		newChild, err := child.Delete(key, storage)
 		if err != nil {
 			return nil, err
 		}
-		newChildPtr := storage.New(newChild)
+		newChildPtr, err := storage.New(newChild)
+		if err != nil {
+			return nil, err
+		}
 		storage.Delete(ptr)
 
 		// Update the child pointer at this index
@@ -202,7 +240,7 @@ func (node BNode) Delete(key []byte, storage Storage) (BNode, error) {
 		return new.splitIfNeeded(storage)
 
 	}
-	panic("unimplemented")
+	return nil, fmt.Errorf("should not happen")
 }
 
 type Type uint16
@@ -489,7 +527,10 @@ func (node BNode) splitLarge(storage Storage) (BNode, error) {
 	result.setHeader(BNODE_NODE, uint16(len(nodes)))
 
 	for i, v := range nodes {
-		ptr := storage.New(v)
+		ptr, err := storage.New(v)
+		if err != nil {
+			return nil, err
+		}
 		key, err := v.getKey(0)
 		if err != nil {
 			return nil, err
@@ -514,15 +555,22 @@ func (node BNode) insertIntoInternal(key []byte, val []byte, storage Storage) (B
 	if err != nil {
 		return nil, err
 	}
+	data, err := storage.Get(ptr)
+	if err != nil {
+		return nil, err
+	}
 
-	child := BNode(storage.Get(ptr))
+	child := BNode(data)
 	newChild, err := child.Insert(key, val, storage)
 	if err != nil {
 		return nil, err
 	}
 
 	// Store new child and mark old for deletion
-	newChildPtr := storage.New(newChild)
+	newChildPtr, err := storage.New(newChild)
+	if err != nil {
+		return nil, err
+	}
 	storage.Delete(ptr)
 
 	// Update the child pointer at this index

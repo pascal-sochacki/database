@@ -16,8 +16,7 @@ const (
 )
 
 type MMapStorage struct {
-	Path  string
-	Fsync func(int) error // overridable for testing
+	Path string
 
 	// File and mmap
 	file *os.File
@@ -51,20 +50,21 @@ func (db *MMapStorage) saveMeta() []byte {
 }
 
 // Delete implements Storage.
-func (db *MMapStorage) Delete(ptr uint64) {
+func (db *MMapStorage) Delete(ptr uint64) error {
 	// Pages are freed automatically by copy-on-write
 	// For now, no-op - we can implement free list later
+	return nil
 }
 
 // Get implements Storage.
-func (db *MMapStorage) Get(ptr uint64) []byte {
+func (db *MMapStorage) Get(ptr uint64) ([]byte, error) {
 	// Check temp pages first
 	if ptr >= db.page.flushed {
 		idx := ptr - db.page.flushed
 		if int(idx) < len(db.page.temp) {
-			return db.page.temp[idx]
+			return db.page.temp[idx], nil
 		}
-		panic("bad ptr")
+		return nil, fmt.Errorf("bad ptr")
 	}
 
 	// Check mmap pages
@@ -73,21 +73,21 @@ func (db *MMapStorage) Get(ptr uint64) []byte {
 		end := start + uint64(len(chunk))/BTREE_PAGE_SIZE
 		if ptr < end {
 			offset := BTREE_PAGE_SIZE * (ptr - start)
-			return chunk[offset : offset+BTREE_PAGE_SIZE]
+			return chunk[offset : offset+BTREE_PAGE_SIZE], nil
 		}
 		start = end
 	}
-	panic("bad ptr")
+	return nil, fmt.Errorf("bad ptr")
 }
 
 // New implements Storage.
-func (db *MMapStorage) New(node []byte) uint64 {
+func (db *MMapStorage) New(node []byte) (uint64, error) {
 	if len(node) != BTREE_PAGE_SIZE {
-		panic("invalid page size")
+		return 0, fmt.Errorf("invalid page size")
 	}
 	ptr := db.page.flushed + uint64(len(db.page.temp))
 	db.page.temp = append(db.page.temp, node)
-	return ptr
+	return ptr, nil
 }
 
 func (db *MMapStorage) flushPages() error {
@@ -107,7 +107,7 @@ func (db *MMapStorage) flushPages() error {
 	}
 
 	// Fsync file
-	if err := db.Fsync(db.fd); err != nil {
+	if err := unix.Fsync(db.fd); err != nil {
 		return fmt.Errorf("fsync pages: %w", err)
 	}
 
@@ -129,10 +129,6 @@ func (db *MMapStorage) flushPages() error {
 }
 
 func (db *MMapStorage) Open() error {
-	// Step 1: Setup callbacks
-	if db.Fsync == nil {
-		db.Fsync = unix.Fsync
-	}
 
 	// Step 2: Open/create file
 	f, err := os.OpenFile(db.Path, os.O_RDWR|os.O_CREATE, 0o644)
@@ -165,7 +161,10 @@ func (db *MMapStorage) Open() error {
 	// Step 6: Handle empty file - create new database
 	if fileSize == 0 {
 		db.page.flushed = 1 // Meta page is page 0
-		db.tree = NewBTree(db)
+		db.tree, err = NewBTree(db)
+		if err != nil {
+			return err
+		}
 		if err := db.flushPages(); err != nil {
 			db.Close()
 			return err
@@ -200,7 +199,10 @@ func (db *MMapStorage) Open() error {
 	}
 
 	// Step 9: Create BTree with loaded root
-	db.tree = NewBTree(db)
+	db.tree, err = NewBTree(db)
+	if err != nil {
+		return err
+	}
 	db.tree.Root = binary.LittleEndian.Uint64(metaData[16:24])
 
 	// Step 10: Return success
@@ -213,7 +215,7 @@ func (db *MMapStorage) writeMetaPage() error {
 	if err != nil {
 		return fmt.Errorf("write meta page: %w", err)
 	}
-	if err := db.Fsync(db.fd); err != nil {
+	if err := unix.Fsync(db.fd); err != nil {
 		return fmt.Errorf("fsync meta page: %w", err)
 	}
 	return nil

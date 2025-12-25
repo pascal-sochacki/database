@@ -115,18 +115,19 @@ func (m *MockStorage) DumpPages() {
 }
 
 // Delete implements Storage.
-func (m *MockStorage) Delete(i uint64) {
+func (m *MockStorage) Delete(i uint64) error {
 	m.testing.Logf("deleting page: %d", i)
 	delete(m.storage, i)
+	return nil
 }
 
 // Get implements Storage.
-func (m *MockStorage) Get(i uint64) []byte {
-	return m.storage[i]
+func (m *MockStorage) Get(i uint64) ([]byte, error) {
+	return m.storage[i], nil
 }
 
 // New implements Storage.
-func (m *MockStorage) New(d []byte) uint64 {
+func (m *MockStorage) New(d []byte) (uint64, error) {
 	if len(d) > BTREE_PAGE_SIZE {
 		m.testing.Logf("Node hexdump:\n%s", hex.Dump(d))
 		m.testing.Errorf("New() called with %d bytes, exceeds BTREE_PAGE_SIZE (%d)", len(d), BTREE_PAGE_SIZE)
@@ -135,13 +136,13 @@ func (m *MockStorage) New(d []byte) uint64 {
 	node := BNode(d)
 	m.testing.Logf("creating page: %d type: %d", idx, node.Type())
 	m.storage[idx] = d
-	return idx
+	return idx, nil
 }
 
 var _ Storage = &MockStorage{}
 
 func TestInsertTree(t *testing.T) {
-	tree := NewBTree(&MockStorage{
+	tree, _ := NewBTree(&MockStorage{
 		testing: t,
 		storage: map[uint64][]byte{}},
 	)
@@ -174,7 +175,7 @@ func TestInsertTree(t *testing.T) {
 }
 
 func TestUpdateTree(t *testing.T) {
-	tree := NewBTree(&MockStorage{
+	tree, _ := NewBTree(&MockStorage{
 		testing: t,
 		storage: map[uint64][]byte{}},
 	)
@@ -200,7 +201,7 @@ func TestUpdateTree(t *testing.T) {
 }
 
 func TestInsertTooLargeKey(t *testing.T) {
-	tree := NewBTree(&MockStorage{
+	tree, _ := NewBTree(&MockStorage{
 		testing: t,
 		storage: map[uint64][]byte{}},
 	)
@@ -211,7 +212,7 @@ func TestInsertTooLargeKey(t *testing.T) {
 }
 
 func TestInsertTooLargeValue(t *testing.T) {
-	tree := NewBTree(&MockStorage{
+	tree, _ := NewBTree(&MockStorage{
 		testing: t,
 		storage: map[uint64][]byte{}},
 	)
@@ -226,7 +227,7 @@ func TestInsertTooForceSplit(t *testing.T) {
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
-	tree := NewBTree(&storage)
+	tree, _ := NewBTree(&storage)
 
 	aKey := []byte(strings.Repeat("ak", 500))
 	aVal := []byte(strings.Repeat("av", 1500))
@@ -270,7 +271,7 @@ func TestInsertTooForceThreeWaySplit(t *testing.T) {
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
-	tree := NewBTree(&storage)
+	tree, _ := NewBTree(&storage)
 
 	err := tree.Insert(aKey, aVal)
 	if err != nil {
@@ -300,7 +301,7 @@ func TestInsertIfRootIsInternalNode(t *testing.T) {
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
-	tree := NewBTree(&storage)
+	tree, _ := NewBTree(&storage)
 
 	aKey := []byte(strings.Repeat("ak", 500))
 	aVal := []byte(strings.Repeat("av", 1500))
@@ -348,7 +349,9 @@ func debugNode(tree BTree, t *testing.T, nodePtr uint64, depth int) {
 		indent += "  "
 	}
 
-	node := BNode(tree.storage.Get(nodePtr))
+	data, _ := tree.storage.Get(nodePtr)
+
+	node := BNode(data)
 	t.Logf("%sNode %d (type: %d, nkeys: %d)\n", indent, nodePtr, node.Type(), node.Keys())
 
 	if node.Type() == BNODE_NODE {
@@ -368,7 +371,7 @@ func TestForceInternalNodeSplit(t *testing.T) {
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
-	tree := NewBTree(storage)
+	tree, _ := NewBTree(storage)
 
 	// Insert 5 items with 1000-byte keys to force internal node split
 	// With 1000-byte keys, an internal node can hold ~4 children before splitting
@@ -402,7 +405,7 @@ func TestDeletionRootIsLeaf(t *testing.T) {
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
-	tree := NewBTree(storage)
+	tree, _ := NewBTree(storage)
 	key := []byte(strings.Repeat("a", 1000))
 	val := []byte(strings.Repeat("a", 3000))
 	err := tree.Insert(key, val)
@@ -431,7 +434,7 @@ func TestDeletionRootIsInternal(t *testing.T) {
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
-	tree := NewBTree(storage)
+	tree, _ := NewBTree(storage)
 	key := []byte(strings.Repeat("a", 1000))
 	val := []byte(strings.Repeat("a", 3000))
 	err := tree.Insert(key, val)
