@@ -26,12 +26,6 @@ func init() {
 	}
 }
 
-type Storage interface {
-	Get(uint64) ([]byte, error)
-	New([]byte) (uint64, error)
-	Delete(uint64) error
-}
-
 type BTree struct {
 	Root    uint64
 	storage Storage

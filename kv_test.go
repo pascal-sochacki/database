@@ -188,7 +188,7 @@ func TestKVMetaPage(t *testing.T) {
 		t.Logf("Root pointer: %d", db.tree.Root)
 	}
 
-	t.Logf("Flushed pages: %d", db.page.flushed)
+	t.Logf("Flushed pages: %d", db.Metadata.Flushed)
 
 	// Insert data to update meta
 	if err := db.tree.Insert([]byte("test"), []byte("data")); err != nil {

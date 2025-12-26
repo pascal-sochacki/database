@@ -55,7 +55,8 @@ func (kv *KV) Delete(key []byte) error {
 }
 
 type MMapStorage struct {
-	Path string
+	Path     string
+	Metadata Metadata
 
 	// File and mmap
 	file *os.File
@@ -68,24 +69,10 @@ type MMapStorage struct {
 	}
 
 	page struct {
-		flushed uint64   // pages persisted to disk
-		temp    [][]byte // new pages in memory
+		temp [][]byte // new pages in memory
 	}
 
 	failed bool // crash recovery flag
-}
-
-func (db *MMapStorage) loadMeta(data []byte) {
-	db.tree.Root = binary.LittleEndian.Uint64(data[16:24])
-	db.page.flushed = binary.LittleEndian.Uint64(data[24:32])
-}
-
-func (db *MMapStorage) saveMeta() []byte {
-	var data [32]byte
-	copy(data[:16], []byte(DB_SIG))
-	binary.LittleEndian.PutUint64(data[16:24], db.tree.Root)
-	binary.LittleEndian.PutUint64(data[24:32], db.page.flushed)
-	return data[:]
 }
 
 // Delete implements Storage.
@@ -98,8 +85,8 @@ func (db *MMapStorage) Delete(ptr uint64) error {
 // Get implements Storage.
 func (db *MMapStorage) Get(ptr uint64) ([]byte, error) {
 	// Check temp pages first
-	if ptr >= db.page.flushed {
-		idx := ptr - db.page.flushed
+	if ptr >= db.Metadata.Flushed {
+		idx := ptr - db.Metadata.Flushed
 		if int(idx) < len(db.page.temp) {
 			return db.page.temp[idx], nil
 		}
@@ -124,7 +111,7 @@ func (db *MMapStorage) New(node []byte) (uint64, error) {
 	if len(node) != BTREE_PAGE_SIZE {
 		return 0, fmt.Errorf("invalid page size")
 	}
-	ptr := db.page.flushed + uint64(len(db.page.temp))
+	ptr := db.Metadata.Flushed + uint64(len(db.page.temp))
 	db.page.temp = append(db.page.temp, node)
 	return ptr, nil
 }
@@ -135,7 +122,7 @@ func (db *MMapStorage) flushPages() error {
 	}
 
 	// Calculate file offset
-	offset := int64(db.page.flushed * BTREE_PAGE_SIZE)
+	offset := int64(db.Metadata.Flushed * BTREE_PAGE_SIZE)
 
 	// Write all temp pages
 	for _, page := range db.page.temp {
@@ -151,10 +138,10 @@ func (db *MMapStorage) flushPages() error {
 	}
 
 	// Update flushed count
-	db.page.flushed += uint64(len(db.page.temp))
+	db.Metadata.Flushed += uint64(len(db.page.temp))
 
 	// Extend mmap if needed
-	newSize := int64(db.page.flushed * BTREE_PAGE_SIZE)
+	newSize := int64(db.Metadata.Flushed * BTREE_PAGE_SIZE)
 	if int(newSize) > db.mmap.total {
 		if err := db.extendMmap(int(newSize)); err != nil {
 			return err
@@ -199,7 +186,7 @@ func (db *MMapStorage) Open() error {
 
 	// Step 6: Handle empty file - create new database
 	if fileSize == 0 {
-		db.page.flushed = 1 // Meta page is page 0
+		db.Metadata.Flushed = 1 // Meta page is page 0
 		db.tree, err = NewBTree(db)
 		if err != nil {
 			return err
@@ -217,7 +204,7 @@ func (db *MMapStorage) Open() error {
 
 	// Step 7: Load existing meta
 	metaData := db.mmap.chunks[0][:META_SIZE]
-	db.loadMeta(metaData)
+	db.Metadata = *NewMetadata(metaData)
 
 	// Step 8: Validate meta page
 	sig := string(metaData[:14])
@@ -227,12 +214,12 @@ func (db *MMapStorage) Open() error {
 	}
 
 	maxPages := uint64(fileSize / BTREE_PAGE_SIZE)
-	if !(0 < db.page.flushed && db.page.flushed <= maxPages) {
+	if !(0 < db.Metadata.Flushed && db.Metadata.Flushed <= maxPages) {
 		db.Close()
 		return errors.New("bad flushed count")
 	}
 
-	if !(0 < db.tree.Root && db.tree.Root < db.page.flushed) {
+	if !(0 < db.tree.Root && db.tree.Root < db.Metadata.Flushed) {
 		db.Close()
 		return errors.New("bad root pointer")
 	}
@@ -249,7 +236,7 @@ func (db *MMapStorage) Open() error {
 }
 
 func (db *MMapStorage) writeMetaPage() error {
-	metaBytes := db.saveMeta()
+	metaBytes := db.Metadata.Save()
 	_, err := unix.Pwrite(db.fd, metaBytes, 0)
 	if err != nil {
 		return fmt.Errorf("write meta page: %w", err)
