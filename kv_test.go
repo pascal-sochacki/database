@@ -182,10 +182,10 @@ func TestKVMetaPage(t *testing.T) {
 	defer db.Close()
 
 	// Check initial meta values
-	if db.tree.Root == 0 {
+	if db.Metadata.Root == 0 {
 		t.Log("Root pointer is 0 (no data yet)")
 	} else {
-		t.Logf("Root pointer: %d", db.tree.Root)
+		t.Logf("Root pointer: %d", db.Metadata.Root)
 	}
 
 	t.Logf("Flushed pages: %d", db.Metadata.Flushed)
@@ -196,11 +196,11 @@ func TestKVMetaPage(t *testing.T) {
 	}
 
 	// Root should now point to a page
-	if db.tree.Root == 0 {
+	if db.Metadata.Root == 0 {
 		t.Error("root should not be 0 after insert")
 	}
 
-	t.Logf("Root pointer after insert: %d", db.tree.Root)
+	t.Logf("Root pointer after insert: %d", db.Metadata.Root)
 
 	t.Log("meta page test passed")
 }

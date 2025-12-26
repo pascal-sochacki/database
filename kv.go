@@ -56,7 +56,7 @@ func (kv *KV) Delete(key []byte) error {
 
 type MMapStorage struct {
 	Path     string
-	Metadata Metadata
+	Metadata *Metadata
 
 	// File and mmap
 	file *os.File
@@ -186,8 +186,9 @@ func (db *MMapStorage) Open() error {
 
 	// Step 6: Handle empty file - create new database
 	if fileSize == 0 {
+		db.Metadata = NewMetadata(make([]byte, BTREE_PAGE_SIZE))
 		db.Metadata.Flushed = 1 // Meta page is page 0
-		db.tree, err = NewBTree(db)
+		db.tree, err = NewBTree(db, db.Metadata)
 		if err != nil {
 			return err
 		}
@@ -204,7 +205,7 @@ func (db *MMapStorage) Open() error {
 
 	// Step 7: Load existing meta
 	metaData := db.mmap.chunks[0][:META_SIZE]
-	db.Metadata = *NewMetadata(metaData)
+	db.Metadata = NewMetadata(metaData)
 
 	// Step 8: Validate meta page
 	sig := string(metaData[:14])
@@ -219,17 +220,17 @@ func (db *MMapStorage) Open() error {
 		return errors.New("bad flushed count")
 	}
 
-	if !(0 < db.tree.Root && db.tree.Root < db.Metadata.Flushed) {
+	if !(0 < db.Metadata.Root && db.Metadata.Root < db.Metadata.Flushed) {
 		db.Close()
 		return errors.New("bad root pointer")
 	}
 
 	// Step 9: Create BTree with loaded root
-	db.tree, err = NewBTree(db)
+	db.tree, err = NewBTree(db, db.Metadata)
 	if err != nil {
 		return err
 	}
-	db.tree.Root = binary.LittleEndian.Uint64(metaData[16:24])
+	db.Metadata.Root = binary.LittleEndian.Uint64(metaData[16:24])
 
 	// Step 10: Return success
 	return nil

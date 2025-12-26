@@ -27,30 +27,31 @@ func init() {
 }
 
 type BTree struct {
-	Root    uint64
-	storage Storage
+	metaData *Metadata
+	storage  Storage
 }
 
-func NewBTree(storage Storage) (BTree, error) {
+func NewBTree(storage Storage, metadata *Metadata) (BTree, error) {
 	root := BNode(make([]byte, BTREE_PAGE_SIZE))
 	root.setHeader(BNODE_LEAF, 0)
 	idx, err := storage.New(root)
+	metadata.Root = idx
 	if err != nil {
 		return BTree{}, err
 	}
 
 	return BTree{
-		Root:    idx,
-		storage: storage,
+		metaData: metadata,
+		storage:  storage,
 	}, nil
 }
 
 func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
-	if tree.Root == 0 {
+	if tree.metaData.Root == 0 {
 		return nil, false, nil
 	}
 
-	data, err := tree.storage.Get(tree.Root)
+	data, err := tree.storage.Get(tree.metaData.Root)
 	if err != nil {
 		return nil, false, err
 	}
@@ -98,7 +99,7 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 		return fmt.Errorf("value to large")
 	}
 
-	data, err := t.storage.Get(t.Root)
+	data, err := t.storage.Get(t.metaData.Root)
 	if err != nil {
 		return err
 	}
@@ -111,8 +112,8 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 		return err
 	}
 
-	old := t.Root
-	t.Root, err = t.storage.New(new)
+	old := t.metaData.Root
+	t.metaData.Root, err = t.storage.New(new)
 	if err != nil {
 		return err
 	}
@@ -125,7 +126,7 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 }
 
 func (t *BTree) Delete(key []byte) error {
-	data, err := t.storage.Get(t.Root)
+	data, err := t.storage.Get(t.metaData.Root)
 	if err != nil {
 		return err
 	}
@@ -137,8 +138,8 @@ func (t *BTree) Delete(key []byte) error {
 		return err
 	}
 
-	old := t.Root
-	t.Root, err = t.storage.New(new)
+	old := t.metaData.Root
+	t.metaData.Root, err = t.storage.New(new)
 	if err != nil {
 		return err
 	}
