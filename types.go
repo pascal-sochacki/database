@@ -62,6 +62,11 @@ func NewRecord() Record {
 	}
 
 }
+
+func (r *Record) Add(col string, val Value) {
+	r.values[col] = val
+}
+
 func (r *Record) AddStr(col string, val []byte) {
 	r.values[col] = NewBytes(val)
 }
@@ -92,12 +97,11 @@ type TableDef struct {
 	Prefix  uint32 // auto-assigned for key prefixing
 }
 
-func NewTableDef(name string, pkeys []Column, keys []Column, prefix uint32) TableDef {
+func NewTableDef(name string, pkeys []Column, keys []Column) TableDef {
 	return TableDef{
 		Name:    name,
 		Columns: append(pkeys, keys...),
 		PKeys:   len(pkeys),
-		Prefix:  prefix,
 	}
 
 }
@@ -150,6 +154,7 @@ func (t *TableDef) EncodeValue(record Record) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("missing pk key: %s", v.Name)
 		}
+		println(string(val.Str))
 		b = append(b, val.encode()...)
 
 	}
@@ -172,7 +177,6 @@ func (T *TableDef) DecodeValues(b []byte) ([]Value, error) {
 			b = b[length:] // Move pointer forward
 
 		case TYPE_INT64:
-			fmt.Printf("%+v", b)
 			result = append(result, NewInt64(int64(binary.LittleEndian.Uint64(b[:8]))))
 			b = b[8:] // Move pointer forward
 

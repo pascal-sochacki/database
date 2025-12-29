@@ -36,7 +36,8 @@ func TestEncodeKeySinglePK(t *testing.T) {
 		Name: "k",
 		Type: TYPE_BYTES,
 	}
-	table := NewTableDef("table-name", []Column{pkeys}, []Column{other}, 1)
+	table := NewTableDef("table-name", []Column{pkeys}, []Column{other})
+	table.Prefix = 1
 
 	record := NewRecord()
 	record.AddStr("pk", []byte("key"))
@@ -65,7 +66,8 @@ func TestEncodeKeyTwoPK(t *testing.T) {
 		Name: "k",
 		Type: TYPE_INT64,
 	}
-	table := NewTableDef("table-name", []Column{pkeysOne, pkeysTwo}, []Column{other}, 1)
+	table := NewTableDef("table-name", []Column{pkeysOne, pkeysTwo}, []Column{other})
+	table.Prefix = 1
 
 	record := NewRecord()
 	record.AddStr("pk1", []byte("one"))
@@ -92,7 +94,7 @@ func TestEncodeValue(t *testing.T) {
 		Name: "k",
 		Type: TYPE_BYTES,
 	}
-	table := NewTableDef("table-name", []Column{pkeys}, []Column{other}, 1)
+	table := NewTableDef("table-name", []Column{pkeys}, []Column{other})
 
 	record := NewRecord()
 	record.AddStr("pk", []byte("key"))
@@ -132,7 +134,8 @@ func TestEncodeTwoValue(t *testing.T) {
 		Name: "k2",
 		Type: TYPE_INT64,
 	}
-	table := NewTableDef("table-name", []Column{pkeys}, []Column{keyOne, keyTwo}, 1)
+	table := NewTableDef("table-name", []Column{pkeys}, []Column{keyOne, keyTwo})
+	table.Prefix = 1
 
 	record := NewRecord()
 	record.AddStr("k1", []byte("one"))
