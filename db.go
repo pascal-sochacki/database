@@ -116,7 +116,6 @@ func (db *DB) CreateTable(table *TableDef) error {
 }
 
 func (db *DB) get(tdef *TableDef, rec *Record) error {
-
 	key, err := tdef.EncodeKey(*rec)
 	if err != nil {
 		return err
@@ -150,6 +149,14 @@ func (db *DB) insert(tdef *TableDef, rec *Record) error {
 	err = db.kv.Insert(key, val)
 	return err
 }
+func (db *DB) delete(tdef *TableDef, rec *Record) error {
+	key, err := tdef.EncodeKey(*rec)
+	if err != nil {
+		return err
+	}
+	err = db.kv.Delete(key)
+	return err
+}
 
 func (db *DB) Get(table string, rec *Record) error {
 	def, err := db.getTableDef(table)
@@ -168,15 +175,27 @@ func (db *DB) Insert(table string, rec Record) error {
 }
 
 func (db *DB) Update(table string, rec Record) error {
-	return nil
+	def, err := db.getTableDef(table)
+	if err != nil {
+		return err
+	}
+	return db.insert(def, &rec)
 }
 
 func (db *DB) Upsert(table string, rec Record) error {
-	return nil
+	def, err := db.getTableDef(table)
+	if err != nil {
+		return err
+	}
+	return db.insert(def, &rec)
 }
 
 func (db *DB) Delete(table string, rec Record) error {
-	return nil
+	def, err := db.getTableDef(table)
+	if err != nil {
+		return err
+	}
+	return db.delete(def, &rec)
 }
 
 func (db *DB) Close() error {

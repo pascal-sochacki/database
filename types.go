@@ -154,7 +154,6 @@ func (t *TableDef) EncodeValue(record Record) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("missing pk key: %s", v.Name)
 		}
-		println(string(val.Str))
 		b = append(b, val.encode()...)
 
 	}
