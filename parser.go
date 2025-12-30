@@ -19,14 +19,6 @@ func (parser *Parser) readToken() {
 	parser.readPosition += 1
 }
 
-func (parser *Parser) peekToken() Token {
-	if parser.readPosition >= len(parser.tokens) {
-		return Token{Type: TOKEN_EOF}
-	} else {
-		return parser.tokens[parser.readPosition]
-	}
-}
-
 type Node interface {
 	StatementType() string
 }
@@ -72,22 +64,22 @@ func (p *Parser) ParseCreateTableStatement() (Node, error) {
 	result.TableName = p.current.Literal
 
 	p.readToken()
-	if p.current.Type != TOKEN_LPAREN {
-		return nil, fmt.Errorf("should get opening parentheses")
+
+	if err := p.expect(TOKEN_LPAREN); err != nil {
+		return nil, err
 	}
-	p.readToken()
 	for p.current.Type != TOKEN_RPAREN {
 		switch p.current.Type {
 		case TOKEN_PRIMARY:
 			p.readToken()
-			if p.current.Type != TOKEN_KEY {
-				return nil, fmt.Errorf("expected key after primary")
+
+			if err := p.expect(TOKEN_KEY); err != nil {
+				return nil, err
 			}
-			p.readToken()
-			if p.current.Type != TOKEN_LPAREN {
-				return nil, fmt.Errorf("expected opening parentheses")
+			if err := p.expect(TOKEN_LPAREN); err != nil {
+				return nil, err
 			}
-			p.readToken()
+
 			if p.current.Type != TOKEN_IDENTIFIER {
 				return nil, fmt.Errorf("expected primary key identifier")
 			}
@@ -122,4 +114,12 @@ func (p *Parser) ParseCreateTableStatement() (Node, error) {
 		p.readToken()
 	}
 	return &result, nil
+}
+
+func (p *Parser) expect(t TokenType) error {
+	if p.current.Type != t {
+		return fmt.Errorf("expected %d, got %d", t, p.current.Type)
+	}
+	p.readToken()
+	return nil
 }
