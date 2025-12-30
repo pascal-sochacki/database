@@ -81,40 +81,6 @@ func (db *DB) getTableDef(name string) (*TableDef, error) {
 	return &result, err
 }
 
-func (db *DB) CreateTable(table *TableDef) error {
-	query := NewRecord()
-	query.AddStr("key", []byte("next_prefix"))
-	err := db.get(TDEF_META, &query)
-	if !errors.Is(err, ErrRecordNotFound) {
-		return err
-	}
-	if err != nil {
-		table.Prefix = 100
-		query.AddStr("val", []byte{100})
-	} else {
-		val, found := query.GetStr("val")
-		if !found {
-			return fmt.Errorf("val missing")
-		}
-		table.Prefix = uint32(val[0])
-	}
-	jsonDef, err := json.Marshal(table)
-
-	t := NewRecord()
-	t.AddStr("name", []byte(table.Name))
-	t.AddStr("def", jsonDef)
-
-	key, err := TDEF_TABLE.EncodeKey(t)
-	if err != nil {
-		return err
-	}
-	value, err := TDEF_TABLE.EncodeValue(t)
-	if err != nil {
-		return err
-	}
-	return db.kv.Insert(key, value)
-}
-
 func (db *DB) get(tdef *TableDef, rec *Record) error {
 	key, err := tdef.EncodeKey(*rec)
 	if err != nil {
@@ -166,6 +132,40 @@ func (db *DB) Get(table string, rec *Record) error {
 	return db.get(def, rec)
 }
 
+func (db *DB) CreateTable(table *TableDef) error {
+	query := NewRecord()
+	query.AddStr("key", []byte("next_prefix"))
+	err := db.get(TDEF_META, &query)
+	if !errors.Is(err, ErrRecordNotFound) {
+		return err
+	}
+	if err != nil {
+		table.Prefix = 100
+		query.AddStr("val", []byte{100})
+	} else {
+		val, found := query.GetStr("val")
+		if !found {
+			return fmt.Errorf("val missing")
+		}
+		table.Prefix = uint32(val[0])
+	}
+	jsonDef, err := json.Marshal(table)
+
+	t := NewRecord()
+	t.AddStr("name", []byte(table.Name))
+	t.AddStr("def", jsonDef)
+
+	key, err := TDEF_TABLE.EncodeKey(t)
+	if err != nil {
+		return err
+	}
+	value, err := TDEF_TABLE.EncodeValue(t)
+	if err != nil {
+		return err
+	}
+	return db.kv.Insert(key, value)
+}
+
 func (db *DB) Insert(table string, rec Record) error {
 	def, err := db.getTableDef(table)
 	if err != nil {
@@ -196,6 +196,51 @@ func (db *DB) Delete(table string, rec Record) error {
 		return err
 	}
 	return db.delete(def, &rec)
+}
+
+func (db *DB) Execute(stmt string) error {
+	lexer := NewLexer(stmt)
+	tokens := lexer.ReadAll()
+	parser := NewParser(tokens)
+	statement, err := parser.ParseCreateStatement()
+	if err != nil {
+		return err
+	}
+	switch s := statement.(type) {
+	case *CreateTableStmt:
+		primaryKeys := []Column{}
+		otherKeys := []Column{}
+
+		for _, astCol := range s.Columns {
+			isPrimaryKeys := false
+
+			for _, v := range s.PrimaryKeyColumns {
+				if v == astCol.Name {
+					isPrimaryKeys = true
+				}
+			}
+
+			col := Column{
+				Name: astCol.Name,
+				Type: TYPE_BYTES,
+			}
+
+			if isPrimaryKeys {
+				primaryKeys = append(primaryKeys, col)
+			} else {
+				otherKeys = append(otherKeys, col)
+			}
+		}
+
+		table := NewTableDef(s.TableName, primaryKeys, otherKeys)
+		err := db.CreateTable(&table)
+		if err != nil {
+			return err
+		}
+	case *NoOpStmt:
+		fmt.Printf("No op\n")
+	}
+	return nil
 }
 
 func (db *DB) Close() error {

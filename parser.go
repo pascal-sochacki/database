@@ -49,7 +49,6 @@ func (p *Parser) ParseCreateStatement() (Node, error) {
 	switch p.current.Type {
 	case TOKEN_TABLE:
 		return p.ParseCreateTableStatement()
-
 	}
 	return &NoOpStmt{}, nil
 }
@@ -92,7 +91,6 @@ func (p *Parser) ParseCreateTableStatement() (Node, error) {
 		case TOKEN_IDENTIFIER:
 			col := AstColumn{}
 			col.Name = p.current.Literal
-			println(col.Name)
 
 			p.readToken()
 			if p.current.Type != TOKEN_IDENTIFIER {
@@ -108,9 +106,7 @@ func (p *Parser) ParseCreateTableStatement() (Node, error) {
 
 			result.Columns = append(result.Columns, col)
 			continue
-
 		}
-
 		p.readToken()
 	}
 	return &result, nil

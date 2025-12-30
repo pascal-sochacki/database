@@ -152,7 +152,7 @@ func (t *TableDef) EncodeValue(record Record) ([]byte, error) {
 	for _, v := range t.GetNonPrimaryKeys() {
 		val, ok := record.Get(v.Name)
 		if !ok {
-			return nil, fmt.Errorf("missing pk key: %s", v.Name)
+			return nil, fmt.Errorf("missing column: %s", v.Name)
 		}
 		b = append(b, val.encode()...)
 

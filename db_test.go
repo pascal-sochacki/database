@@ -226,5 +226,21 @@ func TestDelete(t *testing.T) {
 	if !errors.Is(err, ErrRecordNotFound) {
 		t.Fatalf("should err not found but got: %v", err)
 	}
+}
 
+func TestExecute(t *testing.T) {
+	db := CreateTempDB(t)
+	defer db.Close()
+	err := db.Execute("CREATE TABLE test ( pk bytes, val bytes, primary key (pk))")
+	if err != nil {
+		t.Fatalf("should not err: %v", err)
+	}
+	rec := NewRecord()
+	rec.AddStr("pk", []byte("key"))
+	rec.AddStr("val", []byte("value"))
+
+	err = db.Insert("test", rec)
+	if err != nil {
+		t.Fatalf("should not err: %v", err)
+	}
 }
