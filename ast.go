@@ -1,0 +1,29 @@
+package database
+
+type AstColumn struct {
+	Name string
+	Type string
+}
+
+var _ Node = &CreateTableStmt{}
+
+type CreateTableStmt struct {
+	TableName         string
+	Columns           []AstColumn
+	PrimaryKeyColumns []string
+}
+
+// StatementType implements Node.
+func (c *CreateTableStmt) StatementType() string {
+	return "CREATE_TABLE"
+}
+
+var _ Node = &NoOpStmt{}
+
+type NoOpStmt struct {
+}
+
+// StatementType implements Node.
+func (n *NoOpStmt) StatementType() string {
+	return "NO_OP"
+}
