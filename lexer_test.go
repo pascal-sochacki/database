@@ -41,6 +41,27 @@ func TestLexer_NextToken(t *testing.T) {
 				{Type: TOKEN_EOF},
 			},
 		},
+		{
+			name:  "insert value",
+			input: "INSERT INTO test (pk, val) VALUES ('primary', 'values')",
+			want: []Token{
+				{Type: TOKEN_INSERT, Literal: "INSERT"},
+				{Type: TOKEN_INTO, Literal: "INTO"},
+				{Type: TOKEN_IDENTIFIER, Literal: "test"},
+				{Type: TOKEN_LPAREN, Literal: "("},
+				{Type: TOKEN_IDENTIFIER, Literal: "pk"},
+				{Type: TOKEN_COMMA, Literal: ","},
+				{Type: TOKEN_IDENTIFIER, Literal: "val"},
+				{Type: TOKEN_RPAREN, Literal: ")"},
+				{Type: TOKEN_VALUES, Literal: "VALUES"},
+				{Type: TOKEN_LPAREN, Literal: "("},
+				{Type: TOKEN_IDENTIFIER, Literal: "primary"},
+				{Type: TOKEN_COMMA, Literal: ","},
+				{Type: TOKEN_IDENTIFIER, Literal: "values"},
+				{Type: TOKEN_RPAREN, Literal: ")"},
+				{Type: TOKEN_EOF},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -60,7 +60,6 @@ func NewRecord() Record {
 	return Record{
 		values: map[string]Value{},
 	}
-
 }
 
 func (r *Record) Add(col string, val Value) {

@@ -14,6 +14,9 @@ const (
 
 	// Keywords
 	TOKEN_CREATE
+	TOKEN_INSERT
+	TOKEN_INTO
+	TOKEN_VALUES
 	TOKEN_TABLE
 	TOKEN_INDEX
 	TOKEN_PRIMARY
@@ -40,6 +43,9 @@ type Lexer struct {
 
 var keywords = map[string]TokenType{
 	"CREATE":  TOKEN_CREATE,
+	"INSERT":  TOKEN_INSERT,
+	"VALUES":  TOKEN_VALUES,
+	"INTO":    TOKEN_INTO,
 	"TABLE":   TOKEN_TABLE,
 	"INDEX":   TOKEN_INDEX,
 	"PRIMARY": TOKEN_PRIMARY,
@@ -89,6 +95,19 @@ func (lexer *Lexer) NextToken() Token {
 		tok = Token{Type: TOKEN_SEMICOLON, Literal: string(lexer.ch)}
 	case 0:
 		tok = Token{Type: TOKEN_EOF, Literal: ""}
+	case '\'':
+		lexer.readChar()
+		startPos := lexer.position
+		for lexer.ch != '\'' {
+			lexer.readChar()
+		}
+		literal := lexer.input[startPos:lexer.position]
+		lexer.readChar()
+		return Token{
+			Type:    TOKEN_IDENTIFIER,
+			Literal: literal,
+		}
+
 	default:
 		startPos := lexer.position
 		for lexer.IsLetter(lexer.peek()) {
