@@ -37,11 +37,99 @@ func (p *Parser) ParseStatement() (Node, error) {
 	switch p.current.Type {
 	case TOKEN_EOF:
 		return &NoOpStmt{}, nil
+	case TOKEN_INSERT:
+		return p.parseInsertStatement()
 	case TOKEN_CREATE:
 		return p.ParseCreateStatement()
 	}
 	return &NoOpStmt{}, nil
 
+}
+
+func (p *Parser) parseInsertStatement() (Node, error) {
+	p.readToken()
+	switch p.current.Type {
+	case TOKEN_INTO:
+		return p.ParseInsertIntoStatement()
+
+	}
+	return &NoOpStmt{}, nil
+}
+
+func (p *Parser) ParseInsertIntoStatement() (Node, error) {
+	p.readToken()
+	result := InsertStmt{}
+
+	if p.current.Type != TOKEN_IDENTIFIER {
+		return nil, fmt.Errorf("should get table name")
+	}
+	result.TableName = p.current.Literal
+
+	p.readToken()
+
+	if err := p.expect(TOKEN_LPAREN); err != nil {
+		return nil, err
+	}
+
+	for {
+		if p.current.Type != TOKEN_IDENTIFIER {
+			return nil, fmt.Errorf("expected column identifier")
+		}
+		result.Columns = append(result.Columns, p.current.Literal)
+		p.readToken()
+
+		if p.current.Type == TOKEN_COMMA {
+			p.readToken()
+			continue
+		}
+		if p.current.Type == TOKEN_RPAREN {
+			p.readToken()
+			break
+		}
+		return nil, fmt.Errorf("expected comma or closing parentheses got: %s", string(p.current.Literal))
+	}
+
+	if err := p.expect(TOKEN_VALUES); err != nil {
+		return nil, err
+	}
+
+	if err := p.expect(TOKEN_LPAREN); err != nil {
+		return nil, err
+	}
+
+	for {
+		values := []string{}
+		for {
+			if p.current.Type != TOKEN_IDENTIFIER {
+				return nil, fmt.Errorf("expected column identifier got: %s", p.current.Literal)
+			}
+			values = append(values, p.current.Literal)
+			p.readToken()
+
+			if p.current.Type == TOKEN_COMMA {
+				p.readToken()
+				continue
+			}
+			if p.current.Type == TOKEN_RPAREN {
+				result.Values = append(result.Values, values)
+				p.readToken()
+				break
+			}
+			return nil, fmt.Errorf("expected comma or closing parentheses got: %s", string(p.current.Literal))
+		}
+		if p.current.Type == TOKEN_COMMA {
+			p.readToken()
+			if err := p.expect(TOKEN_LPAREN); err != nil {
+				return nil, err
+			}
+
+			continue
+		}
+		if p.current.Type == TOKEN_EOF {
+			return &result, nil
+		}
+		return nil, fmt.Errorf("expected comma or EOF got: %s", string(p.current.Literal))
+	}
 }
 
 func (p *Parser) ParseCreateStatement() (Node, error) {

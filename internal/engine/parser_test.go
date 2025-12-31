@@ -4,11 +4,83 @@ import (
 	"testing"
 )
 
+func TestParser_ParseInsertStatement(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for receiver constructor.
+		input   string
+		want    InsertStmt
+		wantErr bool
+	}{
+		{
+			name:    "Insert into",
+			wantErr: false,
+			want: InsertStmt{
+				TableName: "test",
+
+				Columns: []string{
+					"pk", "val",
+				},
+				Values: [][]string{
+					{"primary", "values"},
+				},
+			},
+			input: "INSERT INTO test (pk, val) VALUES ('primary', 'values')",
+		},
+		{
+			name:    "Insert into multiple columns",
+			wantErr: false,
+			want: InsertStmt{
+				TableName: "test",
+
+				Columns: []string{
+					"pk", "val",
+				},
+				Values: [][]string{
+					{"primary1", "values1"},
+					{"primary2", "values2"},
+				},
+			},
+			input: "INSERT INTO test (pk, val) VALUES ('primary1', 'values1'),('primary2', 'values2')",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := NewLexer(tt.input)
+			tokens := l.ReadAll()
+			p := NewParser(tokens)
+			got, gotErr := p.ParseStatement()
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("ParseStatement() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("ParseStatement() succeeded unexpectedly")
+			}
+			createTable, ok := got.(*InsertStmt)
+			if !ok {
+				t.Fatalf("got wrong statement type: %+v", got)
+			}
+
+			if tt.want.TableName != createTable.TableName {
+				t.Fatalf("got the name wrong of create table parse got: %s, wanted: %s", createTable.TableName, tt.want.TableName)
+			}
+
+			if len(createTable.Columns) != len(tt.want.Columns) {
+				t.Fatalf("got the wrong length of columns in create table parse got: %d, wanted: %d", len(createTable.Columns), len(tt.want.Columns))
+			}
+
+		})
+	}
+}
+
 func TestParser_ParseCreateTableStatement(t *testing.T) {
 	tests := []struct {
 		name string // description of this test case
 		// Named input parameters for receiver constructor.
-		tokens  []Token
+		input   string
 		want    CreateTableStmt
 		wantErr bool
 	}{
@@ -25,30 +97,14 @@ func TestParser_ParseCreateTableStatement(t *testing.T) {
 					"pk",
 				},
 			},
-			tokens: []Token{
-				{Type: TOKEN_CREATE, Literal: "CREATE"},
-				{Type: TOKEN_TABLE, Literal: "TABLE"},
-				{Type: TOKEN_IDENTIFIER, Literal: "test"},
-				{Type: TOKEN_LPAREN, Literal: "("},
-				{Type: TOKEN_IDENTIFIER, Literal: "pk"},
-				{Type: TOKEN_IDENTIFIER, Literal: "bytes"},
-				{Type: TOKEN_COMMA, Literal: ","},
-				{Type: TOKEN_IDENTIFIER, Literal: "val"},
-				{Type: TOKEN_IDENTIFIER, Literal: "bytes"},
-				{Type: TOKEN_COMMA, Literal: ","},
-				{Type: TOKEN_PRIMARY, Literal: "primary"},
-				{Type: TOKEN_KEY, Literal: "key"},
-				{Type: TOKEN_LPAREN, Literal: "("},
-				{Type: TOKEN_IDENTIFIER, Literal: "pk"},
-				{Type: TOKEN_RPAREN, Literal: ")"},
-				{Type: TOKEN_RPAREN, Literal: ")"},
-				{Type: TOKEN_EOF},
-			},
+			input: "CREATE TABLE test ( pk bytes, val bytes, primary key (pk))",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := NewParser(tt.tokens)
+			l := NewLexer(tt.input)
+			tokens := l.ReadAll()
+			p := NewParser(tokens)
 			got, gotErr := p.ParseStatement()
 			if gotErr != nil {
 				if !tt.wantErr {
@@ -71,7 +127,6 @@ func TestParser_ParseCreateTableStatement(t *testing.T) {
 			if len(createTable.Columns) != len(tt.want.Columns) {
 				t.Fatalf("got the wrong length of columns in create table parse got: %d, wanted: %d", len(createTable.Columns), len(tt.want.Columns))
 			}
-
 		})
 	}
 }

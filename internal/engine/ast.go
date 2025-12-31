@@ -27,3 +27,16 @@ type NoOpStmt struct {
 func (n *NoOpStmt) StatementType() string {
 	return "NO_OP"
 }
+
+var _ Node = &InsertStmt{}
+
+type InsertStmt struct {
+	TableName string
+	Columns   []string
+	Values    [][]string
+}
+
+// StatementType implements Node.
+func (i *InsertStmt) StatementType() string {
+	return "Insert"
+}
