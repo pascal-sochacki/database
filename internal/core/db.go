@@ -205,11 +205,26 @@ func (db *DB) Execute(stmt string) error {
 	lexer := engine.NewLexer(stmt)
 	tokens := lexer.ReadAll()
 	parser := engine.NewParser(tokens)
-	statement, err := parser.ParseCreateStatement()
+	statement, err := parser.ParseStatement()
 	if err != nil {
 		return err
 	}
 	switch s := statement.(type) {
+	case *engine.InsertStmt:
+		for _, v := range s.Values {
+			rec := NewRecord()
+
+			for i, col := range s.Columns {
+				rec.AddStr(col, []byte(v[i]))
+			}
+
+			err = db.Insert(s.TableName, rec)
+			if err != nil {
+				return err
+			}
+
+		}
+
 	case *engine.CreateTableStmt:
 		primaryKeys := []Column{}
 		otherKeys := []Column{}

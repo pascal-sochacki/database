@@ -235,12 +235,25 @@ func TestExecute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("should not err: %v", err)
 	}
-	rec := NewRecord()
-	rec.AddStr("pk", []byte("key"))
-	rec.AddStr("val", []byte("value"))
-
-	err = db.Insert("test", rec)
+	err = db.Execute("INSERT INTO test (pk, val) VALUES ('primary', 'values')")
 	if err != nil {
 		t.Fatalf("should not err: %v", err)
+	}
+
+	query := NewRecord()
+	query.AddStr("pk", []byte("primary"))
+	err = db.Get("test", &query)
+	if err != nil {
+		t.Fatalf("should not err: %v", err)
+	}
+
+	value, ok := query.GetStr("val")
+	if !ok {
+		t.Fatalf("should have key")
+	}
+	expect := []byte("values")
+
+	if !bytes.Equal(value, expect) {
+		t.Fatalf("value dont match got: %s, wanted: %s", value, expect)
 	}
 }
