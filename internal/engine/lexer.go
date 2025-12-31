@@ -2,6 +2,7 @@ package engine
 
 import "strings"
 
+//go:generate stringer -type=TokenType
 type TokenType int
 
 const (
