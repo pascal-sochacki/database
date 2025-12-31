@@ -1,14 +1,17 @@
-package database
+package core
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/pascal-sochacki/database/internal/engine"
+	"github.com/pascal-sochacki/database/internal/storage"
 )
 
 type DB struct {
 	Path string
-	kv   KV
+	kv   storage.KV
 }
 
 var ErrRecordNotFound = errors.New("record not found")
@@ -46,7 +49,7 @@ var TDEF_TABLE = &TableDef{
 }
 
 func NewDB(path string) (*DB, error) {
-	kv, err := newKV(path)
+	kv, err := storage.NewKV(path)
 	if err != nil {
 		return nil, err
 	}
@@ -199,15 +202,15 @@ func (db *DB) Delete(table string, rec Record) error {
 }
 
 func (db *DB) Execute(stmt string) error {
-	lexer := NewLexer(stmt)
+	lexer := engine.NewLexer(stmt)
 	tokens := lexer.ReadAll()
-	parser := NewParser(tokens)
+	parser := engine.NewParser(tokens)
 	statement, err := parser.ParseCreateStatement()
 	if err != nil {
 		return err
 	}
 	switch s := statement.(type) {
-	case *CreateTableStmt:
+	case *engine.CreateTableStmt:
 		primaryKeys := []Column{}
 		otherKeys := []Column{}
 
@@ -237,7 +240,7 @@ func (db *DB) Execute(stmt string) error {
 		if err != nil {
 			return err
 		}
-	case *NoOpStmt:
+	case *engine.NoOpStmt:
 		fmt.Printf("No op\n")
 	}
 	return nil

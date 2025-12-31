@@ -1,4 +1,4 @@
-package database
+package storage
 
 import (
 	"os"
@@ -54,7 +54,7 @@ func TestKVPersistence(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db1, err := newKV(dbPath)
+	db1, err := NewKV(dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestKVPersistence(t *testing.T) {
 		t.Fatalf("failed to close database: %v", err)
 	}
 
-	db2, err := newKV(dbPath)
+	db2, err := NewKV(dbPath)
 	// Phase 2: Reopen and verify data
 	if err != nil {
 		t.Fatalf("failed to reopen database: %v", err)

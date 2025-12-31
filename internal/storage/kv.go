@@ -1,4 +1,4 @@
-package database
+package storage
 
 import (
 	"encoding/binary"
@@ -19,7 +19,7 @@ type KV struct {
 	storage *MMapStorage
 }
 
-func newKV(filename string) (*KV, error) {
+func NewKV(filename string) (*KV, error) {
 	storage := &MMapStorage{Path: filename}
 	err := storage.Open()
 	if err != nil {
