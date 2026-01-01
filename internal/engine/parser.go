@@ -37,6 +37,8 @@ func (p *Parser) ParseStatement() (Node, error) {
 	switch p.current.Type {
 	case TOKEN_EOF:
 		return &NoOpStmt{}, nil
+	case TOKEN_SELECT:
+		return p.parseSelectStatement()
 	case TOKEN_INSERT:
 		return p.parseInsertStatement()
 	case TOKEN_CREATE:
@@ -44,6 +46,24 @@ func (p *Parser) ParseStatement() (Node, error) {
 	}
 	return &NoOpStmt{}, nil
 
+}
+
+func (p *Parser) parseSelectStatement() (Node, error) {
+	result := &SelectStmt{}
+	p.readToken()
+	// only "SELECT * ..." is supported
+	if err := p.expect(TOKEN_IDENTIFIER); err != nil {
+		return nil, err
+	}
+	if err := p.expect(TOKEN_FROM); err != nil {
+		return nil, err
+	}
+	if p.current.Type != TOKEN_IDENTIFIER {
+		return nil, fmt.Errorf("expected table name")
+	}
+	result.TableName = p.current.Literal
+
+	return result, nil
 }
 
 func (p *Parser) parseInsertStatement() (Node, error) {

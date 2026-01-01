@@ -16,6 +16,8 @@ const (
 	// Keywords
 	TOKEN_CREATE
 	TOKEN_INSERT
+	TOKEN_SELECT
+	TOKEN_FROM
 	TOKEN_INTO
 	TOKEN_VALUES
 	TOKEN_TABLE
@@ -45,6 +47,8 @@ type Lexer struct {
 var keywords = map[string]TokenType{
 	"CREATE":  TOKEN_CREATE,
 	"INSERT":  TOKEN_INSERT,
+	"SELECT":  TOKEN_SELECT,
+	"FROM":    TOKEN_FROM,
 	"VALUES":  TOKEN_VALUES,
 	"INTO":    TOKEN_INTO,
 	"TABLE":   TOKEN_TABLE,

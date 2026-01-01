@@ -40,3 +40,14 @@ type InsertStmt struct {
 func (i *InsertStmt) StatementType() string {
 	return "Insert"
 }
+
+var _ Node = &SelectStmt{}
+
+type SelectStmt struct {
+	TableName string
+}
+
+// StatementType implements Node.
+func (s *SelectStmt) StatementType() string {
+	return "Select"
+}

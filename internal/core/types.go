@@ -89,6 +89,11 @@ func (r *Record) GetInt64(col string) (int64, bool) {
 	return v.I64, ok
 }
 
+type ResultSet struct {
+	Columns []string   // ["pk", "val"]
+	Rows    [][]string // [["primary", "values"]]
+}
+
 type TableDef struct {
 	Name    string
 	Columns []Column

@@ -201,15 +201,20 @@ func (db *DB) Delete(table string, rec Record) error {
 	return db.delete(def, &rec)
 }
 
-func (db *DB) Execute(stmt string) error {
+func (db *DB) Execute(stmt string) (*ResultSet, error) {
 	lexer := engine.NewLexer(stmt)
 	tokens := lexer.ReadAll()
 	parser := engine.NewParser(tokens)
 	statement, err := parser.ParseStatement()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	switch s := statement.(type) {
+	case *engine.SelectStmt:
+		rec := NewRecord()
+		db.Get(s.TableName, &rec)
+		return &ResultSet{}, nil
+
 	case *engine.InsertStmt:
 		for _, v := range s.Values {
 			rec := NewRecord()
@@ -220,9 +225,8 @@ func (db *DB) Execute(stmt string) error {
 
 			err = db.Insert(s.TableName, rec)
 			if err != nil {
-				return err
+				return nil, err
 			}
-
 		}
 
 	case *engine.CreateTableStmt:
@@ -253,12 +257,12 @@ func (db *DB) Execute(stmt string) error {
 		table := NewTableDef(s.TableName, primaryKeys, otherKeys)
 		err := db.CreateTable(&table)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	case *engine.NoOpStmt:
 		fmt.Printf("No op\n")
 	}
-	return nil
+	return nil, nil
 }
 
 func (db *DB) Close() error {
