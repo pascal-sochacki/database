@@ -427,20 +427,48 @@ func TestDeletionRootIsInternal(t *testing.T) {
 
 }
 
-func TestRangeQuery(t *testing.T) {
+func TestAll(t *testing.T) {
 	storage := &MockStorage{
 		testing: t,
 		storage: map[uint64][]byte{},
 	}
 	tree, _ := NewBTree(storage, NewMetadata(make([]byte, BTREE_PAGE_SIZE)))
-	tree.Insert([]byte("key1"), []byte("value1"))
-	tree.Insert([]byte("key2"), []byte("value2"))
-	tree.Insert([]byte("key3"), []byte("value3"))
-	tree.Insert([]byte("key4"), []byte("value4"))
+	tree.Insert([]byte{0, 0}, []byte("value1"))
+	tree.Insert([]byte{0}, []byte("value2"))
+	tree.Insert([]byte{255, 255}, []byte("value4"))
+	tree.Insert([]byte{255}, []byte("value3"))
 
+	count := 0
 	for key, value := range tree.All() {
+		count += 1
 		t.Logf("key: %+v, val: %+v", key, value)
 	}
+	if count != 4 {
+		t.Fatalf("got the count wrong should: 4, is: %d", count)
+	}
+}
 
-	t.Fatalf("test")
+func TestScan(t *testing.T) {
+	storage := &MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{},
+	}
+	tree, _ := NewBTree(storage, NewMetadata(make([]byte, BTREE_PAGE_SIZE)))
+	tree.Insert([]byte{0, 0}, []byte("value1"))
+	tree.Insert([]byte{0}, []byte("value2"))
+	tree.Insert([]byte{10, 0}, []byte("value2"))
+	tree.Insert([]byte{10}, []byte("value2"))
+	tree.Insert([]byte{10, 255}, []byte("value2"))
+	tree.Insert([]byte{255, 255}, []byte("value4"))
+	tree.Insert([]byte{255}, []byte("value3"))
+
+	count := 0
+	for key, value := range tree.Scan([]byte{10}, []byte{11}) {
+		count += 1
+		t.Logf("key: %+v, val: %+v", key, value)
+	}
+	if count != 3 {
+		t.Fatalf("got the count wrong should: 3, is: %d", count)
+	}
+
 }

@@ -47,17 +47,28 @@ func NewBTree(storage Storage, metadata *Metadata) (BTree, error) {
 	}, nil
 }
 
+func (tree *BTree) Scan(start, end []byte) iter.Seq2[[]byte, []byte] {
+	return func(yield func([]byte, []byte) bool) {
+		if tree.metaData.Root == 0 {
+			return
+		}
+
+		// We start the recursive scan from the root
+		tree.scanRecursive(tree.metaData.Root, start, end, yield)
+	}
+}
+
 func (tree *BTree) All() iter.Seq2[[]byte, []byte] {
 	return func(yield func([]byte, []byte) bool) {
 		if tree.metaData.Root == 0 {
 			return
 		}
 
-		tree.scanRecursive(tree.metaData.Root, yield)
+		tree.scanRecursive(tree.metaData.Root, nil, nil, yield)
 	}
 }
 
-func (t *BTree) scanRecursive(ptr uint64, yield func([]byte, []byte) bool) bool {
+func (t *BTree) scanRecursive(ptr uint64, start []byte, end []byte, yield func([]byte, []byte) bool) bool {
 	data, err := t.storage.Get(ptr)
 	if err != nil {
 		return false // Or handle error via a field in a wrapper struct
@@ -65,9 +76,22 @@ func (t *BTree) scanRecursive(ptr uint64, yield func([]byte, []byte) bool) bool 
 	node := BNode(data)
 
 	if node.Type() == BNODE_LEAF {
-		for i := uint16(0); i < node.Keys(); i++ {
+		nkeys := node.Keys()
+		startIdx := uint16(0)
+
+		if start != nil {
+			idx, _, _ := node.Lookup(start)
+			startIdx = idx
+		}
+
+		for i := startIdx; i < nkeys; i++ {
 			key, _ := node.getKey(i)
 			val, _ := node.getVal(i)
+
+			if end != nil && bytes.Compare(key, end) >= 0 {
+				return false // Stop everything
+			}
+
 			if !yield(key, val) {
 				return false // Caller stopped the loop
 			}
@@ -75,11 +99,30 @@ func (t *BTree) scanRecursive(ptr uint64, yield func([]byte, []byte) bool) bool 
 		return true
 	}
 
-	// Internal Node: Visit children
-	for i := uint16(0); i < node.Keys(); i++ {
-		childPtr, _ := node.getPtr(i)
-		if !t.scanRecursive(childPtr, yield) {
-			return false
+	nkeys := node.Keys()
+	startIdx := uint16(0)
+	if start != nil {
+		// Use LookupLE to find the first child that could contain start
+		startIdx, _ = node.LookupLE(start)
+	}
+
+	for i := startIdx; i < nkeys; i++ {
+		for i := uint16(0); i < node.Keys(); i++ {
+			if i > startIdx && end != nil {
+				childFirstKey, _ := node.getKey(i)
+				if bytes.Compare(childFirstKey, end) >= 0 {
+					return false
+				}
+			}
+
+			childPtr, _ := node.getPtr(i)
+			if !t.scanRecursive(childPtr, start, end, yield) {
+				return false
+			}
+
+			// After the first child is processed, we no longer need the start restriction
+			// for subsequent siblings in the recursion.
+			start = nil
 		}
 	}
 	return true
