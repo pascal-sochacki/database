@@ -426,3 +426,21 @@ func TestDeletionRootIsInternal(t *testing.T) {
 	}
 
 }
+
+func TestRangeQuery(t *testing.T) {
+	storage := &MockStorage{
+		testing: t,
+		storage: map[uint64][]byte{},
+	}
+	tree, _ := NewBTree(storage, NewMetadata(make([]byte, BTREE_PAGE_SIZE)))
+	tree.Insert([]byte("key1"), []byte("value1"))
+	tree.Insert([]byte("key2"), []byte("value2"))
+	tree.Insert([]byte("key3"), []byte("value3"))
+	tree.Insert([]byte("key4"), []byte("value4"))
+
+	for key, value := range tree.All() {
+		t.Logf("key: %+v, val: %+v", key, value)
+	}
+
+	t.Fatalf("test")
+}

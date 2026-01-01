@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"iter"
 )
 
 const BTREE_PAGE_SIZE = 4096
@@ -44,6 +45,44 @@ func NewBTree(storage Storage, metadata *Metadata) (BTree, error) {
 		metaData: metadata,
 		storage:  storage,
 	}, nil
+}
+
+func (tree *BTree) All() iter.Seq2[[]byte, []byte] {
+	return func(yield func([]byte, []byte) bool) {
+		if tree.metaData.Root == 0 {
+			return
+		}
+
+		tree.scanRecursive(tree.metaData.Root, yield)
+	}
+}
+
+func (t *BTree) scanRecursive(ptr uint64, yield func([]byte, []byte) bool) bool {
+	data, err := t.storage.Get(ptr)
+	if err != nil {
+		return false // Or handle error via a field in a wrapper struct
+	}
+	node := BNode(data)
+
+	if node.Type() == BNODE_LEAF {
+		for i := uint16(0); i < node.Keys(); i++ {
+			key, _ := node.getKey(i)
+			val, _ := node.getVal(i)
+			if !yield(key, val) {
+				return false // Caller stopped the loop
+			}
+		}
+		return true
+	}
+
+	// Internal Node: Visit children
+	for i := uint16(0); i < node.Keys(); i++ {
+		childPtr, _ := node.getPtr(i)
+		if !t.scanRecursive(childPtr, yield) {
+			return false
+		}
+	}
+	return true
 }
 
 func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
@@ -91,7 +130,7 @@ func (tree *BTree) Get(key []byte) ([]byte, bool, error) {
 
 }
 
-func (t *BTree) Insert(key []byte, val []byte) error {
+func (tree *BTree) Insert(key []byte, val []byte) error {
 	if len(key) > BTREE_MAX_KEY_SIZE {
 		return fmt.Errorf("key to large")
 	}
@@ -99,21 +138,21 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 		return fmt.Errorf("value to large")
 	}
 
-	data, err := t.storage.Get(t.metaData.Root)
+	data, err := tree.storage.Get(tree.metaData.Root)
 	if err != nil {
 		return err
 	}
 
 	current := BNode(data)
 
-	ctx := &insertContext{storage: t.storage, toDelete: []uint64{}}
+	ctx := &insertContext{storage: tree.storage, toDelete: []uint64{}}
 	new, err := current.Insert(key, val, ctx)
 	if err != nil {
 		return err
 	}
 
-	old := t.metaData.Root
-	t.metaData.Root, err = t.storage.New(new)
+	old := tree.metaData.Root
+	tree.metaData.Root, err = tree.storage.New(new)
 	if err != nil {
 		return err
 	}
@@ -125,21 +164,21 @@ func (t *BTree) Insert(key []byte, val []byte) error {
 	return nil
 }
 
-func (t *BTree) Delete(key []byte) error {
-	data, err := t.storage.Get(t.metaData.Root)
+func (tree *BTree) Delete(key []byte) error {
+	data, err := tree.storage.Get(tree.metaData.Root)
 	if err != nil {
 		return err
 	}
 
 	current := BNode(data)
-	ctx := &insertContext{storage: t.storage, toDelete: []uint64{}}
+	ctx := &insertContext{storage: tree.storage, toDelete: []uint64{}}
 	new, err := current.Delete(key, ctx)
 	if err != nil {
 		return err
 	}
 
-	old := t.metaData.Root
-	t.metaData.Root, err = t.storage.New(new)
+	old := tree.metaData.Root
+	tree.metaData.Root, err = tree.storage.New(new)
 	if err != nil {
 		return err
 	}
