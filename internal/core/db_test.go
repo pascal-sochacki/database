@@ -49,6 +49,31 @@ func CreateTempDB(t *testing.T) *DB {
 	return db
 }
 
+func AssertRecord(t *testing.T, got, want Record) {
+	t.Helper()
+	for k, v := range want.values {
+		if v.Type == TYPE_BYTES {
+			gotVal, ok := got.GetStr(k)
+			if !ok {
+				t.Fatalf("missing column %s", k)
+			}
+			wantVal, _ := want.GetStr(k)
+			if !bytes.Equal(gotVal, wantVal) {
+				t.Fatalf("column %s: got %s, want %s", k, gotVal, wantVal)
+			}
+		} else if v.Type == TYPE_INT64 {
+			gotVal, ok := got.GetInt64(k)
+			if !ok {
+				t.Fatalf("missing column %s", k)
+			}
+			wantVal, _ := want.GetInt64(k)
+			if gotVal != wantVal {
+				t.Fatalf("column %s: got %d, want %d", k, gotVal, wantVal)
+			}
+		}
+	}
+}
+
 func TestCreateTableAndInsert(t *testing.T) {
 	db := CreateTempDB(t)
 	defer db.Close()
@@ -225,6 +250,50 @@ func TestDelete(t *testing.T) {
 	err = db.Get("test", &query)
 	if !errors.Is(err, ErrRecordNotFound) {
 		t.Fatalf("should err not found but got: %v", err)
+	}
+}
+
+func TestScan(t *testing.T) {
+	db := CreateTempDB(t)
+	defer db.Close()
+
+	stmt := []string{
+		"CREATE TABLE tes ( pk bytes, val bytes, primary key (pk))",
+		"CREATE TABLE test ( pk bytes, val bytes, primary key (pk))",
+		"CREATE TABLE testt ( pk bytes, val bytes, primary key (pk))",
+
+		"INSERT INTO tes (pk, val) VALUES ('p1', 'valuesxx')",
+		"INSERT INTO test (pk, val) VALUES ('p1', 'values1')",
+		"INSERT INTO test (pk, val) VALUES ('p2', 'values2')",
+		"INSERT INTO testt (pk, val) VALUES ('p2', 'valuesx')",
+	}
+	for _, v := range stmt {
+		_, err := db.Execute(v)
+		if err != nil {
+			t.Fatalf("should not err: %v when running: %s", err, v)
+		}
+	}
+
+	v1 := NewRecord()
+	v1.AddStr("val", []byte("values1"))
+	v1.AddStr("pk", []byte("p1"))
+
+	v2 := NewRecord()
+	v2.AddStr("val", []byte("values2"))
+	v2.AddStr("pk", []byte("p2"))
+
+	want := []Record{v1, v2}
+
+	records, err := db.Scan("test")
+	if err != nil {
+		t.Fatalf("should not err: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("wrong size")
+	}
+	for i, v := range want {
+		AssertRecord(t, records[i], v)
+
 	}
 }
 

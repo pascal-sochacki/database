@@ -106,6 +106,32 @@ func (db *DB) get(tdef *TableDef, rec *Record) error {
 	return nil
 }
 
+func (db *DB) scan(tdef *TableDef) ([]Record, error) {
+	key := tdef.GetPrefix()
+	end := make([]byte, len(key))
+	copy(end, key)
+	end[len(end)-1] -= 1
+
+	result := []Record{}
+	for k, v := range db.kv.Scan(key, end) {
+
+		current := NewRecord()
+		err := tdef.DecodeValuesToRecord(v, &current)
+
+		if err != nil {
+			return nil, err
+		}
+
+		err = tdef.DecodeKeysToRecord(k, &current)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, current)
+
+	}
+	return result, nil
+}
+
 func (db *DB) insert(tdef *TableDef, rec *Record) error {
 	key, err := tdef.EncodeKey(*rec)
 	if err != nil {
@@ -127,6 +153,14 @@ func (db *DB) delete(tdef *TableDef, rec *Record) error {
 	return err
 }
 
+func (db *DB) Scan(table string) ([]Record, error) {
+	def, err := db.getTableDef(table)
+	if err != nil {
+		return nil, err
+	}
+	return db.scan(def)
+}
+
 func (db *DB) Get(table string, rec *Record) error {
 	def, err := db.getTableDef(table)
 	if err != nil {
@@ -139,19 +173,19 @@ func (db *DB) CreateTable(table *TableDef) error {
 	query := NewRecord()
 	query.AddStr("key", []byte("next_prefix"))
 	err := db.get(TDEF_META, &query)
-	if !errors.Is(err, ErrRecordNotFound) {
+	if errors.Is(err, ErrRecordNotFound) {
+		table.Prefix = 100
+	} else if err != nil {
 		return err
 	}
-	if err != nil {
+
+	val, found := query.GetStr("val")
+	if !found {
 		table.Prefix = 100
-		query.AddStr("val", []byte{100})
 	} else {
-		val, found := query.GetStr("val")
-		if !found {
-			return fmt.Errorf("val missing")
-		}
 		table.Prefix = uint32(val[0])
 	}
+
 	jsonDef, err := json.Marshal(table)
 
 	t := NewRecord()
@@ -166,7 +200,27 @@ func (db *DB) CreateTable(table *TableDef) error {
 	if err != nil {
 		return err
 	}
-	return db.kv.Insert(key, value)
+	err = db.kv.Insert(key, value)
+	if err != nil {
+		return err
+	}
+
+	update := NewRecord()
+	update.AddStr("key", []byte("next_prefix"))
+	update.AddStr("val", []byte{byte(table.Prefix) + 1})
+	key, err = TDEF_META.EncodeKey(update)
+	if err != nil {
+		return err
+	}
+	value, err = TDEF_META.EncodeValue(update)
+	if err != nil {
+		return err
+	}
+	err = db.insert(TDEF_META, &update)
+	if err != nil {
+		return errors.Join(err, fmt.Errorf("wtf?"))
+	}
+	return nil
 }
 
 func (db *DB) Insert(table string, rec Record) error {

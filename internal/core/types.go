@@ -136,9 +136,14 @@ func (t *TableDef) GetNonPrimaryKeys() []Column {
 	return t.Columns[t.PKeys:]
 }
 
-func (t *TableDef) EncodeKey(record Record) ([]byte, error) {
+func (t *TableDef) GetPrefix() []byte {
 	b := []byte{}
 	b = binary.LittleEndian.AppendUint32(b, t.Prefix)
+	return b
+}
+
+func (t *TableDef) EncodeKey(record Record) ([]byte, error) {
+	b := t.GetPrefix()
 	for _, v := range t.GetPrimaryKeys() {
 		val, ok := record.Get(v.Name)
 		if !ok {
@@ -162,6 +167,32 @@ func (t *TableDef) EncodeValue(record Record) ([]byte, error) {
 
 	}
 	return b, nil
+}
+
+func (T *TableDef) DecodeKeys(b []byte) ([]Value, error) {
+	return T.DecodeValues(b[4:])
+}
+
+func (t *TableDef) DecodeKeysToRecord(b []byte, record *Record) error {
+	values, err := t.DecodeKeys(b)
+	if err != nil {
+		return err
+	}
+	for i, v := range values {
+		record.Add(t.Columns[i].Name, v)
+	}
+	return nil
+}
+
+func (t *TableDef) DecodeValuesToRecord(b []byte, record *Record) error {
+	values, err := t.DecodeValues(b)
+	if err != nil {
+		return err
+	}
+	for i, v := range values {
+		record.Add(t.Columns[i+t.PKeys].Name, v)
+	}
+	return nil
 }
 
 func (T *TableDef) DecodeValues(b []byte) ([]Value, error) {

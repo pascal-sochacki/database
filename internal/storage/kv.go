@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -44,6 +45,10 @@ func (kv *KV) Insert(key []byte, val []byte) error {
 
 func (kv *KV) Get(key []byte) ([]byte, bool, error) {
 	return kv.storage.tree.Get(key)
+}
+
+func (kv *KV) Scan(start, end []byte) iter.Seq2[[]byte, []byte] {
+	return kv.storage.tree.Scan(start, end)
 }
 
 func (kv *KV) Delete(key []byte) error {
