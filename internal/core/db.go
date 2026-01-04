@@ -144,6 +144,7 @@ func (db *DB) insert(tdef *TableDef, rec *Record) error {
 	err = db.kv.Insert(key, val)
 	return err
 }
+
 func (db *DB) delete(tdef *TableDef, rec *Record) error {
 	key, err := tdef.EncodeKey(*rec)
 	if err != nil {
@@ -265,9 +266,46 @@ func (db *DB) Execute(stmt string) (*ResultSet, error) {
 	}
 	switch s := statement.(type) {
 	case *engine.SelectStmt:
-		rec := NewRecord()
-		db.Get(s.TableName, &rec)
-		return &ResultSet{}, nil
+		table, err := db.getTableDef(s.TableName)
+		if err != nil {
+			return nil, err
+
+		}
+		keys := []string{}
+		for _, v := range s.Keys {
+			if v == "*" {
+				for _, k := range table.Columns {
+					keys = append(keys, k.Name)
+				}
+			}
+		}
+
+		rec, err := db.scan(table)
+		if err != nil {
+			return nil, err
+		}
+
+		result := ResultSet{}
+		result.Columns = keys
+		result.Rows = [][]string{}
+		for _, v := range rec {
+
+			row := []string{}
+
+			for _, col := range result.Columns {
+
+				val, found := v.GetStr(col)
+				if !found {
+					return nil, fmt.Errorf("key not found")
+
+				}
+				row = append(row, string(val))
+			}
+
+			result.Rows = append(result.Rows, row)
+		}
+
+		return &result, nil
 
 	case *engine.InsertStmt:
 		for _, v := range s.Values {

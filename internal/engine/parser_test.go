@@ -17,6 +17,7 @@ func TestParser_ParseSelectStatement(t *testing.T) {
 			wantErr: false,
 			want: SelectStmt{
 				TableName: "test",
+				Keys:      []string{"*"},
 			},
 			input: "SELECT * FROM test",
 		},
@@ -36,13 +37,17 @@ func TestParser_ParseSelectStatement(t *testing.T) {
 			if tt.wantErr {
 				t.Fatal("ParseStatement() succeeded unexpectedly")
 			}
-			createTable, ok := got.(*SelectStmt)
+			selectStmt, ok := got.(*SelectStmt)
 			if !ok {
 				t.Fatalf("got wrong statement type: %+v", got)
 			}
 
-			if tt.want.TableName != createTable.TableName {
-				t.Fatalf("got the name wrong of create table parse got: %s, wanted: %s", createTable.TableName, tt.want.TableName)
+			if tt.want.TableName != selectStmt.TableName {
+				t.Fatalf("got the name wrong of create table parse got: %s, wanted: %s", selectStmt.TableName, tt.want.TableName)
+			}
+
+			if len(selectStmt.Keys) != len(tt.want.Keys) {
+				t.Fatal("wrong size")
 			}
 		})
 	}

@@ -313,14 +313,18 @@ func TestExecute(t *testing.T) {
 		t.Fatalf("should not err: %v", err)
 	}
 
-	t.SkipNow()
-
 	if len(result.Columns) != 2 {
 		t.Fatalf("wrong size")
 	}
 
 	if result.Columns[0] != "pk" {
-		t.Fatalf("first col should be pk")
+		t.Fatalf("1. col should be pk")
+	}
+	if result.Columns[1] != "val" {
+		t.Fatalf("2. col should be val")
 	}
 
+	if result.Rows[0][0] != "primary" {
+		t.Fatalf("first row and first col should be 'primary'")
+	}
 }

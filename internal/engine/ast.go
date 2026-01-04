@@ -44,6 +44,7 @@ func (i *InsertStmt) StatementType() string {
 var _ Node = &SelectStmt{}
 
 type SelectStmt struct {
+	Keys      []string
 	TableName string
 }
 

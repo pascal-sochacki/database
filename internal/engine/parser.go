@@ -50,6 +50,7 @@ func (p *Parser) ParseStatement() (Node, error) {
 
 func (p *Parser) parseSelectStatement() (Node, error) {
 	result := &SelectStmt{}
+	result.Keys = []string{"*"}
 	p.readToken()
 	// only "SELECT * ..." is supported
 	if err := p.expect(TOKEN_IDENTIFIER); err != nil {
